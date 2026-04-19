@@ -3,7 +3,7 @@ mod managed_config;
 mod tmux;
 mod ui;
 
-use std::io;
+use std::io::{self, Write};
 
 use anyhow::Result;
 use crossterm::{
@@ -33,7 +33,10 @@ fn main() -> Result<()> {
         terminal.show_cursor()?;
 
         match result? {
-            Some(target) => tmux.attach(&target)?,
+            Some(target) => {
+                tmux.attach(&target)?;
+                clear_tmux_detach_line()?;
+            }
             None => return Ok(()),
         }
     }
@@ -44,4 +47,10 @@ fn run_app(
     mut app: App,
 ) -> Result<Option<crate::tmux::TargetKind>> {
     app.run(terminal)
+}
+
+fn clear_tmux_detach_line() -> Result<()> {
+    print!("\x1b[1A\x1b[2K\r");
+    io::stdout().flush()?;
+    Ok(())
 }

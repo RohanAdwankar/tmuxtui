@@ -135,7 +135,7 @@ impl Tmux {
     }
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<String> {
-        self.run([
+        match self.run([
             "capture-pane",
             "-a",
             "-J",
@@ -144,7 +144,13 @@ impl Tmux {
             pane_id,
             "-S",
             "-120",
-        ])
+        ]) {
+            Ok(output) => Ok(output),
+            Err(error) if error.to_string().contains("no alternate screen") => {
+                self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub fn create_session(&self, name: &str) -> Result<()> {
