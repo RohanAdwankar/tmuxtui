@@ -550,7 +550,10 @@ impl App {
 
     fn attach_selected(&mut self) -> Result<()> {
         if let Some(target) = self.selected_target() {
-            self.tmux.set_last_target(&target)?;
+            let last_target = self
+                .last_target_for_selection()
+                .unwrap_or_else(|| target.clone());
+            self.tmux.set_last_target(&last_target)?;
             self.attach_target = Some(target);
             self.should_quit = true;
         }
@@ -898,6 +901,24 @@ impl App {
         }
     }
 
+    fn last_target_for_selection(&self) -> Option<TargetKind> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = session
+                    .windows
+                    .iter()
+                    .find(|window| window.active)
+                    .or_else(|| session.windows.first())?;
+                Some(TargetKind::Window {
+                    session_id: session.id.clone(),
+                    window_id: window.id.clone(),
+                })
+            }
+            _ => self.selected_target(),
+        }
+    }
+
     fn selected_pane_id(&self) -> Option<String> {
         match self.selection.as_ref()? {
             Selection::Pane(session_idx, window_idx, pane_idx) => self
@@ -1075,6 +1096,21 @@ mod tests {
         app.reconcile_selection(previous_selection.as_ref());
 
         assert_eq!(app.selection, Some(Selection::Window(0, 0)));
+    }
+
+    #[test]
+    fn session_selection_remembers_active_window_as_last_target() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", false), ("@2", "beta", true)]);
+        app.selection = Some(Selection::Session(0));
+
+        let target = app.last_target_for_selection();
+
+        assert!(matches!(
+            target,
+            Some(crate::tmux::TargetKind::Window { session_id, window_id })
+                if session_id == "$1" && window_id == "@2"
+        ));
     }
 
     fn test_app() -> App {
