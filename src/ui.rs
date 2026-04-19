@@ -27,6 +27,7 @@ pub struct DrawState<'a> {
     preview_status: String,
     preview_text: String,
     footer: Vec<Action<'a>>,
+    sidebar_percent: u8,
     show_hints: bool,
     filter: &'a str,
     input: &'a str,
@@ -83,6 +84,7 @@ impl<'a> DrawState<'a> {
             preview_status: preview_status(app),
             preview_text: app.preview.clone(),
             footer: app.actions(),
+            sidebar_percent: app.sidebar_percent(),
             show_hints: app.show_hints(),
             filter: &app.filter,
             input: &app.input,
@@ -98,13 +100,22 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
         .constraints([Constraint::Min(1), Constraint::Length(2)])
         .split(frame.area());
 
-    let main = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(24), Constraint::Percentage(76)])
-        .split(outer[0]);
+    match state.sidebar_percent {
+        0 => draw_preview(frame, outer[0], state),
+        100 => draw_tree(frame, outer[0], state),
+        percent => {
+            let main = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(percent as u16),
+                    Constraint::Percentage((100 - percent) as u16),
+                ])
+                .split(outer[0]);
 
-    draw_tree(frame, main[0], state);
-    draw_preview(frame, main[1], state);
+            draw_tree(frame, main[0], state);
+            draw_preview(frame, main[1], state);
+        }
+    }
     draw_footer(frame, outer[1], state);
 }
 

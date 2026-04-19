@@ -74,6 +74,10 @@ impl Tmux {
         self.managed.settings().show_hints
     }
 
+    pub fn sidebar_percent(&self) -> u8 {
+        self.managed.settings().sidebar_percent
+    }
+
     pub fn snapshot(&self) -> Result<Snapshot> {
         let sessions_raw = self.run_or_empty([
             "list-sessions",
@@ -238,6 +242,11 @@ impl Tmux {
     pub fn set_show_status(&mut self, show_status: bool) -> Result<()> {
         self.managed.set_show_status(show_status)?;
         self.reload_config()
+    }
+
+    pub fn set_sidebar_percent(&mut self, sidebar_percent: u8) -> Result<()> {
+        self.managed.set_sidebar_percent(sidebar_percent)?;
+        Ok(())
     }
 
     fn exec_attach<const N: usize>(&self, args: [&str; N]) -> Result<()> {

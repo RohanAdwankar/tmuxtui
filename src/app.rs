@@ -534,6 +534,18 @@ impl App {
                 self.tmux.set_show_status(true)?;
                 self.status = String::from("tmux status shown");
             }
+            _ if command.starts_with("sidebar ") => {
+                let value = command["sidebar ".len()..].trim();
+                match value.parse::<u8>() {
+                    Ok(percent) => {
+                        self.tmux.set_sidebar_percent(percent)?;
+                        self.status = format!("sidebar {}", percent.min(100));
+                    }
+                    Err(_) => {
+                        self.status = String::from("sidebar expects 0-100");
+                    }
+                }
+            }
             "" => {}
             _ => {
                 self.status = format!("unknown command: {command}");
@@ -796,6 +808,10 @@ impl App {
 
     pub fn show_hints(&self) -> bool {
         self.tmux.show_hints()
+    }
+
+    pub fn sidebar_percent(&self) -> u8 {
+        self.tmux.sidebar_percent()
     }
 
     fn push_count_digit(&mut self, digit: usize) {

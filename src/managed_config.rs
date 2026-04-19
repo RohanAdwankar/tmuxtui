@@ -4,11 +4,13 @@ use anyhow::{Context, Result};
 
 const DEFAULT_SHOW_HINTS: bool = true;
 const DEFAULT_SHOW_STATUS: bool = true;
+const DEFAULT_SIDEBAR_PERCENT: u8 = 24;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
     pub show_hints: bool,
     pub show_status: bool,
+    pub sidebar_percent: u8,
 }
 
 impl Default for Settings {
@@ -16,6 +18,7 @@ impl Default for Settings {
         Self {
             show_hints: DEFAULT_SHOW_HINTS,
             show_status: DEFAULT_SHOW_STATUS,
+            sidebar_percent: DEFAULT_SIDEBAR_PERCENT,
         }
     }
 }
@@ -66,6 +69,11 @@ impl ManagedConfig {
         self.sync_files()
     }
 
+    pub fn set_sidebar_percent(&mut self, sidebar_percent: u8) -> Result<()> {
+        self.settings.sidebar_percent = sidebar_percent.min(100);
+        self.sync_files()
+    }
+
     fn sync_files(&self) -> Result<()> {
         fs::write(&self.settings_path, render_settings(&self.settings)).with_context(|| {
             format!(
@@ -106,6 +114,11 @@ fn read_settings(path: &PathBuf) -> Result<Settings> {
         match key.trim() {
             "show_hints" => settings.show_hints = parsed,
             "show_status" => settings.show_status = parsed,
+            "sidebar_percent" => {
+                if let Ok(percent) = value.trim().parse::<u8>() {
+                    settings.sidebar_percent = percent.min(100);
+                }
+            }
             _ => {}
         }
     }
@@ -115,8 +128,8 @@ fn read_settings(path: &PathBuf) -> Result<Settings> {
 
 fn render_settings(settings: &Settings) -> String {
     format!(
-        "show_hints={}\nshow_status={}\n",
-        settings.show_hints, settings.show_status
+        "show_hints={}\nshow_status={}\nsidebar_percent={}\n",
+        settings.show_hints, settings.show_status, settings.sidebar_percent
     )
 }
 
@@ -178,11 +191,12 @@ mod tests {
         let settings = Settings {
             show_hints: false,
             show_status: true,
+            sidebar_percent: 24,
         };
 
         assert_eq!(
             render_settings(&settings),
-            "show_hints=false\nshow_status=true\n"
+            "show_hints=false\nshow_status=true\nsidebar_percent=24\n"
         );
     }
 
@@ -191,6 +205,7 @@ mod tests {
         let settings = Settings {
             show_hints: true,
             show_status: true,
+            sidebar_percent: 24,
         };
 
         let tmux_conf = render_tmux_conf(&settings);
