@@ -522,6 +522,9 @@ impl App {
 
     fn attach_selected(&mut self) -> Result<()> {
         if let Some(target) = self.selected_target() {
+            if let Some(session_id) = self.selected_session_id() {
+                self.tmux.set_last_session(&session_id)?;
+            }
             self.attach_target = Some(target);
             self.should_quit = true;
         }
@@ -671,19 +674,21 @@ impl App {
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
-        if let Some((session_id, window_id, pane_id)) = self.tmux.last_target() {
-            if let Some(selection) = self.selection_for_ids(&session_id, &window_id, &pane_id) {
-                return Some(selection);
-            }
-        }
-
         let attached_session_idx = self
             .snapshot
             .sessions
             .iter()
             .position(|session| session.attached);
-        let session_idx =
-            attached_session_idx.or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
+        let session_idx = attached_session_idx
+            .or_else(|| {
+                self.tmux.last_session().and_then(|session_id| {
+                    self.snapshot
+                        .sessions
+                        .iter()
+                        .position(|session| session.id == session_id)
+                })
+            })
+            .or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
         let session = self.snapshot.sessions.get(session_idx)?;
 
         let window_idx = session
@@ -713,6 +718,18 @@ impl App {
 
     fn selection_for_window(&self, session_id: &str, window_id: &str) -> Option<Selection> {
         self.selection_for_ids(session_id, window_id, "")
+    }
+
+    fn selected_session_id(&self) -> Option<String> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx)
+            | Selection::Window(session_idx, _)
+            | Selection::Pane(session_idx, _, _) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| session.id.clone()),
+        }
     }
 
     fn selection_for_ids(

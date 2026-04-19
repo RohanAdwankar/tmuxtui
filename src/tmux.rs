@@ -240,16 +240,6 @@ impl Tmux {
         }
     }
 
-    pub fn last_target(&self) -> Option<(String, String, String)> {
-        let output = self.run(["show-options", "-gqv", "@tmuxtui-return"]).ok()?;
-        let mut parts = output.split_whitespace();
-        Some((
-            parts.next()?.to_owned(),
-            parts.next()?.to_owned(),
-            parts.next()?.to_owned(),
-        ))
-    }
-
     pub fn has_tmux_binary(&self) -> Result<()> {
         let output = Command::new("tmux")
             .arg("-V")
@@ -275,6 +265,18 @@ impl Tmux {
     pub fn set_sidebar_percent(&mut self, sidebar_percent: u8) -> Result<()> {
         self.managed.set_sidebar_percent(sidebar_percent)?;
         Ok(())
+    }
+
+    pub fn set_last_session(&self, session_id: &str) -> Result<()> {
+        self.run(["set-option", "-gq", "@tmuxtui-session", session_id])
+            .map(|_| ())
+    }
+
+    pub fn last_session(&self) -> Option<String> {
+        self.run(["show-options", "-gqv", "@tmuxtui-session"])
+            .ok()
+            .map(|output| output.trim().to_owned())
+            .filter(|session_id| !session_id.is_empty())
     }
 
     fn exec_attach<const N: usize>(&self, args: [&str; N]) -> Result<()> {

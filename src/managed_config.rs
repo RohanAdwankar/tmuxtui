@@ -176,7 +176,7 @@ set -ga update-environment "NVIM"
 bind -n C-j if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-j' 'select-pane -D'
 bind -n C-k if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-k' 'select-pane -U'
 bind -n C-l if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-l' 'select-pane -R'
-bind -n C-q run-shell 'tmux set-option -gq @tmuxtui-return "#{session_id} #{window_id} #{pane_id}"' \; detach-client
+bind -n C-q detach-client
 "##,
     );
     tmux_conf
