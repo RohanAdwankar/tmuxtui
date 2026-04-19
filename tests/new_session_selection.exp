@@ -1,0 +1,38 @@
+#!/usr/bin/expect -f
+
+if {$argc != 4} {
+    puts stderr "usage: new_session_selection.exp <binary> <tmux_tmpdir> <session_name> <result_file>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set session_name [lindex $argv 2]
+set result_file [lindex $argv 3]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- "n"
+after 300
+send -- $session_name
+after 300
+send -- "\r"
+after 700
+send -- "\r"
+after 1500
+send -- "tmux display-message -p '#S' > '$result_file'\r"
+
+for {set attempt 0} {$attempt < 100} {incr attempt} {
+    if {[file exists $result_file]} {
+        exit 0
+    }
+    after 100
+}
+
+puts stderr "timed out waiting for result file"
+exit 1

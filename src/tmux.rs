@@ -145,12 +145,13 @@ impl Tmux {
         self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
     }
 
-    pub fn create_session(&self, name: &str) -> Result<()> {
-        if name.is_empty() {
-            self.run(["new-session", "-d"]).map(|_| ())
+    pub fn create_session(&self, name: &str) -> Result<String> {
+        let output = if name.is_empty() {
+            self.run(["new-session", "-P", "-F", "#{session_id}", "-d"])
         } else {
-            self.run(["new-session", "-d", "-s", name]).map(|_| ())
-        }
+            self.run(["new-session", "-P", "-F", "#{session_id}", "-d", "-s", name])
+        }?;
+        Ok(output.trim().to_owned())
     }
 
     pub fn rename_session(&self, session_id: &str, name: &str) -> Result<()> {

@@ -318,7 +318,16 @@ impl App {
             KeyCode::Enter => {
                 let value = self.input.trim().to_owned();
                 match kind {
-                    PromptKind::NewSession => self.tmux.create_session(&value)?,
+                    PromptKind::NewSession => {
+                        let session_id = self.tmux.create_session(&value)?;
+                        self.mode = InputMode::Normal;
+                        self.input.clear();
+                        self.status = String::from("saved");
+                        self.refresh()?;
+                        self.selection = self.selection_for_session(&session_id);
+                        self.refresh_preview()?;
+                        return Ok(());
+                    }
                     PromptKind::NewWindow { session_id } => {
                         let base_pane_id = self.selected_pane_id();
                         let window_id =
@@ -763,6 +772,14 @@ impl App {
         self.selection_for_ids(session_id, window_id, "")
     }
 
+    fn selection_for_session(&self, session_id: &str) -> Option<Selection> {
+        self.snapshot
+            .sessions
+            .iter()
+            .position(|session| session.id == session_id)
+            .map(Selection::Session)
+    }
+
     fn selection_from_last_target(&self, target: &LastTarget) -> Option<Selection> {
         if let Some(window_id) = target.window_id.as_deref() {
             return self.selection_for_ids(
@@ -1150,6 +1167,31 @@ mod tests {
                 session_id: String::from("$1"),
             })
         );
+    }
+
+    #[test]
+    fn selection_for_session_finds_new_session_by_id() {
+        let app = App {
+            snapshot: Snapshot {
+                sessions: vec![
+                    Session {
+                        id: String::from("$1"),
+                        name: String::from("dev"),
+                        attached: false,
+                        windows: Vec::new(),
+                    },
+                    Session {
+                        id: String::from("$2"),
+                        name: String::from("fresh"),
+                        attached: false,
+                        windows: Vec::new(),
+                    },
+                ],
+            },
+            ..test_app()
+        };
+
+        assert_eq!(app.selection_for_session("$2"), Some(Selection::Session(1)));
     }
 
     fn test_app() -> App {
