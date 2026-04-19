@@ -71,7 +71,6 @@ pub struct App {
     attach_target: Option<TargetKind>,
     count_prefix: Option<usize>,
     pending_g: bool,
-    pending_d: bool,
 }
 
 impl App {
@@ -93,7 +92,6 @@ impl App {
             attach_target: None,
             count_prefix: None,
             pending_g: false,
-            pending_d: false,
         }
     }
 
@@ -192,18 +190,6 @@ impl App {
             }
         }
 
-        if self.pending_d {
-            self.pending_d = false;
-            match key.code {
-                KeyCode::Char('d') => {
-                    self.clear_count();
-                    self.start_kill_prompt();
-                    return Ok(());
-                }
-                _ => self.clear_count(),
-            }
-        }
-
         if let KeyCode::Char(ch) = key.code {
             if let Some(digit) = ch.to_digit(10) {
                 if digit > 0 || self.count_prefix.is_some() {
@@ -234,7 +220,8 @@ impl App {
                 self.pending_g = true;
             }
             KeyCode::Char('d') => {
-                self.pending_d = true;
+                self.clear_count();
+                self.start_kill_prompt();
             }
             KeyCode::Char('G') => {
                 if self.count_prefix.is_some() {
@@ -284,10 +271,6 @@ impl App {
                 self.clear_count();
                 self.start_rename_prompt();
             }
-            KeyCode::Char('x') => {
-                self.clear_count();
-                self.start_kill_prompt();
-            }
             KeyCode::Char('s') => {
                 self.clear_count();
                 self.split_selected()?;
@@ -306,7 +289,6 @@ impl App {
             }
             _ => {
                 self.pending_g = false;
-                self.pending_d = false;
                 self.clear_count();
             }
         }
@@ -1018,7 +1000,7 @@ impl App {
             Action::new("O", "new session"),
             Action::new("w", "new window"),
             Action::new("r", "rename"),
-            Action::new("x", "kill"),
+            Action::new("d", "kill"),
             Action::new("s", "split"),
             Action::new("z", "zoom"),
             Action::new("tab", "focus"),

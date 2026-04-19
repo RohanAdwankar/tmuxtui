@@ -52,7 +52,7 @@ The preview pane on the right shows:
 | `n` | create a new session |
 | `w` | create a new window in the selected session |
 | `r` | rename the selected session, window, or pane |
-| `x` | kill the selected session, window, or pane |
+| `d` | kill the selected session, window, or pane |
 | `s` | split the selected pane |
 | `z` | toggle zoom on the selected pane |
 | `R` | refresh tmux state |
