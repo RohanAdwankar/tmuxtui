@@ -1,0 +1,14 @@
+[package]
+name = "tmuxtui"
+version = "0.1.0"
+edition = "2024"
+
+authors = ["Rohan Adwankar <rohan.adwankar@gmail.com>"]
+description = "tmuxtui"
+repository = "https://github.com/RohanAdwankar/tmuxtui"
+license = "MIT"
+keywords = ["tmuxtui", "devtool"]
+[dependencies]
+
+[lints.clippy]
+all = "warn"
