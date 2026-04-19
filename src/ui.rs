@@ -59,15 +59,12 @@ impl<'a> DrawState<'a> {
                     ));
                 }
                 Selection::Pane(session_idx, window_idx, pane_idx) => {
-                    let pane =
-                        &app.snapshot.sessions[session_idx].windows[window_idx].panes[pane_idx];
+                    let window = &app.snapshot.sessions[session_idx].windows[window_idx];
+                    let pane = &window.panes[pane_idx];
                     let zoom = if pane.zoomed { " z" } else { "" };
-                    let multi_pane = app.snapshot.sessions[session_idx].windows[window_idx]
-                        .panes
-                        .len()
-                        > 1;
+                    let multi_pane = window.panes.len() > 1;
                     tree_lines.push(styled_line(
-                        format!("    {}{}", pane_tree_label(pane_idx), zoom),
+                        pane_tree_line(window, pane_idx, zoom),
                         app.selection.as_ref() == Some(&selection),
                         pane.active && multi_pane,
                         false,
@@ -210,6 +207,19 @@ fn pane_tree_label(pane_idx: usize) -> String {
     (pane_idx + 1).to_string()
 }
 
+fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &str) -> String {
+    if window.panes.len() > 1 {
+        format!(
+            "{}{}{}",
+            " ".repeat(window.name.chars().count() + 3),
+            pane_tree_label(pane_idx),
+            zoom_suffix
+        )
+    } else {
+        format!("    {}{}", pane_tree_label(pane_idx), zoom_suffix)
+    }
+}
+
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
         format!("{} 1", window.name)
@@ -220,13 +230,44 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{pane_tree_label, window_tree_label};
+    use super::{pane_tree_label, pane_tree_line, window_tree_label};
     use crate::tmux::Window;
 
     #[test]
     fn pane_tree_label_uses_window_local_numbers() {
         assert_eq!(pane_tree_label(0), "1");
         assert_eq!(pane_tree_label(1), "2");
+    }
+
+    #[test]
+    fn pane_tree_line_aligns_under_split_window_suffix() {
+        let split_window = Window {
+            id: String::from("@1"),
+            name: String::from("zsh"),
+            active: true,
+            session_id: String::from("$1"),
+            panes: vec![
+                crate::tmux::Pane {
+                    id: String::from("%1"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: true,
+                    zoomed: false,
+                    window_id: String::from("@1"),
+                },
+                crate::tmux::Pane {
+                    id: String::from("%2"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: false,
+                    zoomed: false,
+                    window_id: String::from("@1"),
+                },
+            ],
+        };
+
+        assert_eq!(window_tree_label(&split_window), "zsh 1");
+        assert_eq!(pane_tree_line(&split_window, 1, ""), "      2");
     }
 
     #[test]
