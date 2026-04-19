@@ -52,7 +52,7 @@ impl<'a> DrawState<'a> {
                     let window = &app.snapshot.sessions[session_idx].windows[window_idx];
                     let multi_window = app.snapshot.sessions[session_idx].windows.len() > 1;
                     tree_lines.push(styled_line(
-                        format!("  {}", window.name),
+                        format!("  {}", window_tree_label(window)),
                         app.selection.as_ref() == Some(&selection),
                         window.active && multi_window,
                         false,
@@ -210,14 +210,53 @@ fn pane_tree_label(pane_idx: usize) -> String {
     (pane_idx + 1).to_string()
 }
 
+fn window_tree_label(window: &crate::tmux::Window) -> String {
+    if window.panes.len() > 1 {
+        format!("{} 1", window.name)
+    } else {
+        window.name.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::pane_tree_label;
+    use super::{pane_tree_label, window_tree_label};
+    use crate::tmux::Window;
 
     #[test]
     fn pane_tree_label_uses_window_local_numbers() {
         assert_eq!(pane_tree_label(0), "1");
         assert_eq!(pane_tree_label(1), "2");
+    }
+
+    #[test]
+    fn window_tree_label_suffixes_first_pane_when_split() {
+        let split_window = Window {
+            id: String::from("@1"),
+            name: String::from("editor"),
+            active: true,
+            session_id: String::from("$1"),
+            panes: vec![
+                crate::tmux::Pane {
+                    id: String::from("%1"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: true,
+                    zoomed: false,
+                    window_id: String::from("@1"),
+                },
+                crate::tmux::Pane {
+                    id: String::from("%2"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: false,
+                    zoomed: false,
+                    window_id: String::from("@1"),
+                },
+            ],
+        };
+
+        assert_eq!(window_tree_label(&split_window), "editor 1");
     }
 }
 

@@ -37,7 +37,6 @@ pub struct Window {
 #[derive(Clone, Debug)]
 pub struct Pane {
     pub id: String,
-    pub title: String,
     pub current_command: String,
     pub current_path: String,
     pub active: bool,
@@ -456,10 +455,12 @@ fn parse_panes(raw: &str) -> Vec<Pane> {
     raw.lines()
         .filter_map(|line| {
             let mut parts = line.split('\t');
+            let window_id = parts.next()?.to_owned();
+            let id = parts.next()?.to_owned();
+            parts.next()?;
             Some(Pane {
-                window_id: parts.next()?.to_owned(),
-                id: parts.next()?.to_owned(),
-                title: parts.next()?.to_owned(),
+                window_id,
+                id,
                 current_command: parts.next()?.to_owned(),
                 current_path: parts.next()?.to_owned(),
                 active: parts.next()? == "1",
