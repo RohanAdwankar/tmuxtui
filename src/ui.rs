@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    app::{App, ConfirmAction, Focus, InputMode, Selection},
+    app::{App, ConfirmAction, InputMode, Selection},
     tmux::Pane,
 };
 
@@ -24,7 +24,7 @@ impl<'a> Action<'a> {
 
 pub struct DrawState<'a> {
     tree_lines: Vec<Line<'a>>,
-    preview_title: String,
+    preview_status: String,
     preview_text: String,
     footer: Vec<Action<'a>>,
     show_hints: bool,
@@ -32,7 +32,6 @@ pub struct DrawState<'a> {
     input: &'a str,
     status: &'a str,
     mode: &'a InputMode,
-    focus: &'a Focus,
 }
 
 impl<'a> DrawState<'a> {
@@ -43,71 +42,39 @@ impl<'a> DrawState<'a> {
             match selection {
                 Selection::Session(session_idx) => {
                     let session = &app.snapshot.sessions[session_idx];
-                    let marker = if app.selection.as_ref() == Some(&selection) {
-                        ">"
-                    } else {
-                        " "
-                    };
                     let attached = if session.attached { " *" } else { "" };
-                    tree_lines.push(Line::from(vec![
-                        Span::raw(marker),
-                        Span::raw(" "),
-                        Span::styled(&session.name, Style::default().add_modifier(Modifier::BOLD)),
-                        Span::raw(attached),
-                    ]));
+                    tree_lines.push(styled_line(
+                        format!("{}{}", session.name, attached),
+                        app.selection.as_ref() == Some(&selection),
+                        true,
+                    ));
                 }
                 Selection::Window(session_idx, window_idx) => {
                     let window = &app.snapshot.sessions[session_idx].windows[window_idx];
-                    let marker = if app.selection.as_ref() == Some(&selection) {
-                        ">"
-                    } else {
-                        " "
-                    };
                     let active = if window.active { " *" } else { "" };
-                    tree_lines.push(Line::from(format!("{marker}   {}{}", window.name, active)));
+                    tree_lines.push(styled_line(
+                        format!("  {}{}", window.name, active),
+                        app.selection.as_ref() == Some(&selection),
+                        false,
+                    ));
                 }
                 Selection::Pane(session_idx, window_idx, pane_idx) => {
                     let pane =
                         &app.snapshot.sessions[session_idx].windows[window_idx].panes[pane_idx];
-                    let marker = if app.selection.as_ref() == Some(&selection) {
-                        ">"
-                    } else {
-                        " "
-                    };
                     let active = if pane.active { " *" } else { "" };
                     let zoom = if pane.zoomed { " z" } else { "" };
-                    tree_lines.push(Line::from(format!(
-                        "{marker}     {} · {}{}{}",
-                        pane_name(pane),
-                        pane.current_command,
-                        active,
-                        zoom
-                    )));
+                    tree_lines.push(styled_line(
+                        format!("    {}{}{}", pane_tree_label(pane), active, zoom),
+                        app.selection.as_ref() == Some(&selection),
+                        false,
+                    ));
                 }
             }
         }
 
-        let preview_title = match app.selection.as_ref() {
-            Some(Selection::Session(session_idx)) => {
-                format!("{} preview", app.snapshot.sessions[*session_idx].name)
-            }
-            Some(Selection::Window(session_idx, window_idx)) => format!(
-                "{} / {}",
-                app.snapshot.sessions[*session_idx].name,
-                app.snapshot.sessions[*session_idx].windows[*window_idx].name
-            ),
-            Some(Selection::Pane(session_idx, window_idx, pane_idx)) => {
-                let session = &app.snapshot.sessions[*session_idx];
-                let window = &session.windows[*window_idx];
-                let pane = &window.panes[*pane_idx];
-                format!("{} / {} / {}", session.name, window.name, pane_name(pane))
-            }
-            None => String::from("No sessions"),
-        };
-
         Self {
             tree_lines,
-            preview_title,
+            preview_status: preview_status(app),
             preview_text: app.preview.clone(),
             footer: app.actions(),
             show_hints: app.show_hints(),
@@ -115,7 +82,6 @@ impl<'a> DrawState<'a> {
             input: &app.input,
             status: &app.status,
             mode: &app.mode,
-            focus: &app.focus,
         }
     }
 }
@@ -142,14 +108,7 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
 }
 
 fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
-    let title = match state.focus {
-        Focus::Tree => "tmux",
-        Focus::Preview => "tmux ",
-    };
-    let block = Block::default().title(title);
-    let paragraph = Paragraph::new(Text::from(state.tree_lines.clone()))
-        .block(block)
-        .wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(Text::from(state.tree_lines.clone())).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -160,10 +119,18 @@ fn draw_divider(frame: &mut Frame<'_>, area: Rect) {
 }
 
 fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
-    let paragraph = Paragraph::new(state.preview_text.clone())
-        .block(Block::default().title(state.preview_title.clone()))
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(area);
+
+    let status = Paragraph::new(state.preview_status.clone())
+        .block(Block::default().borders(Borders::BOTTOM))
         .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
+    let preview = Paragraph::new(state.preview_text.clone()).wrap(Wrap { trim: false });
+
+    frame.render_widget(status, sections[0]);
+    frame.render_widget(preview, sections[1]);
 }
 
 fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
@@ -238,5 +205,79 @@ fn pane_name(pane: &Pane) -> &str {
         &pane.id
     } else {
         &pane.title
+    }
+}
+
+fn pane_tree_label(pane: &Pane) -> String {
+    let name = pane_name(pane);
+    if pane.title.trim().is_empty() || name == pane.current_command {
+        pane.current_command.clone()
+    } else {
+        name.to_owned()
+    }
+}
+
+fn styled_line<'a>(content: String, selected: bool, bold: bool) -> Line<'a> {
+    let mut style = Style::default();
+    if selected {
+        style = style.bg(Color::Indexed(34)).fg(Color::Black);
+    }
+    if bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    Line::from(Span::styled(content, style))
+}
+
+fn preview_status(app: &App) -> String {
+    match app.selection.as_ref() {
+        Some(Selection::Session(session_idx)) => {
+            let session = &app.snapshot.sessions[*session_idx];
+            if let Some(window) = session
+                .windows
+                .iter()
+                .find(|window| window.active)
+                .or_else(|| session.windows.first())
+            {
+                if let Some(pane) = window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.active)
+                    .or_else(|| window.panes.first())
+                {
+                    return format!(
+                        "{} | {} | {} | {}",
+                        session.name, window.name, pane.current_command, pane.current_path
+                    );
+                }
+                return format!("{} | {}", session.name, window.name);
+            }
+            session.name.clone()
+        }
+        Some(Selection::Window(session_idx, window_idx)) => {
+            let session = &app.snapshot.sessions[*session_idx];
+            let window = &session.windows[*window_idx];
+            if let Some(pane) = window
+                .panes
+                .iter()
+                .find(|pane| pane.active)
+                .or_else(|| window.panes.first())
+            {
+                return format!(
+                    "{} | {} | {} | {}",
+                    session.name, window.name, pane.current_command, pane.current_path
+                );
+            }
+            format!("{} | {}", session.name, window.name)
+        }
+        Some(Selection::Pane(session_idx, window_idx, pane_idx)) => {
+            let session = &app.snapshot.sessions[*session_idx];
+            let window = &session.windows[*window_idx];
+            let pane = &window.panes[*pane_idx];
+            format!(
+                "{} | {} | {} | {}",
+                session.name, window.name, pane.current_command, pane.current_path
+            )
+        }
+        None => String::from("No sessions"),
     }
 }
