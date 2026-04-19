@@ -147,6 +147,8 @@ set -g history-limit 50000
 set -g base-index 1
 setw -g pane-base-index 1
 set -g renumber-windows on
+setw -g automatic-rename on
+setw -g automatic-rename-format "#{pane_current_command}"
 setw -g aggressive-resize on
 set -g detach-on-destroy off
 set -g set-clipboard on

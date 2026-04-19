@@ -135,7 +135,11 @@ impl Tmux {
     }
 
     pub fn create_session(&self, name: &str) -> Result<()> {
-        self.run(["new-session", "-d", "-s", name]).map(|_| ())
+        if name.is_empty() {
+            self.run(["new-session", "-d"]).map(|_| ())
+        } else {
+            self.run(["new-session", "-d", "-s", name]).map(|_| ())
+        }
     }
 
     pub fn rename_session(&self, session_id: &str, name: &str) -> Result<()> {
@@ -148,8 +152,12 @@ impl Tmux {
     }
 
     pub fn new_window(&self, session_id: &str, name: &str) -> Result<()> {
-        self.run(["new-window", "-d", "-t", session_id, "-n", name])
-            .map(|_| ())
+        if name.is_empty() {
+            self.run(["new-window", "-d", "-t", session_id]).map(|_| ())
+        } else {
+            self.run(["new-window", "-d", "-t", session_id, "-n", name])
+                .map(|_| ())
+        }
     }
 
     pub fn rename_window(&self, window_id: &str, name: &str) -> Result<()> {
