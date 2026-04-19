@@ -442,22 +442,38 @@ impl App {
 
     fn start_new_window_prompt(&mut self) {
         if let Some(selection) = self.selection.clone() {
-            let session = match selection {
-                Selection::Session(session_idx)
-                | Selection::Window(session_idx, _)
-                | Selection::Pane(session_idx, _, _) => self.snapshot.sessions.get(session_idx),
+            let prompt = match selection {
+                Selection::Session(session_idx) => {
+                    self.snapshot
+                        .sessions
+                        .get(session_idx)
+                        .map(|session| PromptKind::NewWindow {
+                            session_id: session.id.clone(),
+                            base_window_id: self.base_window_id_for_session(session),
+                        })
+                }
+                Selection::Window(session_idx, window_idx) => self
+                    .snapshot
+                    .sessions
+                    .get(session_idx)
+                    .and_then(|session| session.windows.get(window_idx))
+                    .map(|window| PromptKind::NewWindow {
+                        session_id: self.snapshot.sessions[session_idx].id.clone(),
+                        base_window_id: Some(window.id.clone()),
+                    }),
+                Selection::Pane(session_idx, window_idx, _) => self
+                    .snapshot
+                    .sessions
+                    .get(session_idx)
+                    .and_then(|session| session.windows.get(window_idx))
+                    .map(|window| PromptKind::NewWindow {
+                        session_id: self.snapshot.sessions[session_idx].id.clone(),
+                        base_window_id: Some(window.id.clone()),
+                    }),
             };
-            if let Some(session) = session {
+            if let Some(prompt) = prompt {
                 self.input.clear();
-                self.mode = InputMode::Prompt(PromptKind::NewWindow {
-                    session_id: session.id.clone(),
-                    base_window_id: session
-                        .windows
-                        .iter()
-                        .find(|window| window.active)
-                        .or_else(|| session.windows.first())
-                        .map(|window| window.id.clone()),
-                });
+                self.mode = InputMode::Prompt(prompt);
             }
         }
     }
@@ -920,18 +936,32 @@ impl App {
         match self.selection.as_ref()? {
             Selection::Session(session_idx) => {
                 let session = self.snapshot.sessions.get(*session_idx)?;
-                let window = session
-                    .windows
-                    .iter()
-                    .find(|window| window.active)
-                    .or_else(|| session.windows.first())?;
+                let window_id = self.base_window_id_for_session(session)?;
                 Some(TargetKind::Window {
                     session_id: session.id.clone(),
-                    window_id: window.id.clone(),
+                    window_id,
                 })
             }
             _ => self.selected_target(),
         }
+    }
+
+    fn base_window_id_for_session(&self, session: &crate::tmux::Session) -> Option<String> {
+        if let Some(window_id) = self
+            .tmux
+            .last_target()
+            .filter(|target| target.session_id == session.id)
+            .and_then(|target| target.window_id)
+        {
+            return Some(window_id);
+        }
+
+        session
+            .windows
+            .iter()
+            .find(|window| window.active)
+            .or_else(|| session.windows.first())
+            .map(|window| window.id.clone())
     }
 
     fn selected_pane_id(&self) -> Option<String> {
