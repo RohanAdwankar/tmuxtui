@@ -562,7 +562,10 @@ impl App {
                 return;
             }
         }
-        self.selection = visible.first().cloned();
+        self.selection = self
+            .preferred_selection()
+            .filter(|selection| visible.iter().any(|item| item == selection))
+            .or_else(|| visible.first().cloned());
     }
 
     fn refresh_preview(&mut self) -> Result<()> {
@@ -614,16 +617,20 @@ impl App {
             if session_match {
                 rows.push(Selection::Session(session_idx));
             }
+
+            let show_windows = self.should_show_windows(session);
             for (window_idx, window) in session.windows.iter().enumerate() {
                 let window_match = self.matches_filter(&window.name, &needle);
-                if session_match || window_match {
+                if show_windows && (session_match || window_match) {
                     rows.push(Selection::Window(session_idx, window_idx));
                 }
+
+                let show_panes = self.should_show_panes(session, window);
                 for (pane_idx, pane) in window.panes.iter().enumerate() {
                     let pane_match = self.matches_filter(&pane_label(pane), &needle)
                         || self.matches_filter(&pane.current_command, &needle)
                         || self.matches_filter(&pane.current_path, &needle);
-                    if session_match || window_match || pane_match {
+                    if show_panes && (session_match || window_match || pane_match) {
                         rows.push(Selection::Pane(session_idx, window_idx, pane_idx));
                     }
                 }
@@ -634,6 +641,52 @@ impl App {
 
     fn matches_filter(&self, haystack: &str, needle: &str) -> bool {
         needle.is_empty() || haystack.to_lowercase().contains(needle)
+    }
+
+    fn preferred_selection(&self) -> Option<Selection> {
+        let session_idx = self
+            .snapshot
+            .sessions
+            .iter()
+            .position(|session| session.attached)
+            .or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
+        let session = self.snapshot.sessions.get(session_idx)?;
+
+        let window_idx = session
+            .windows
+            .iter()
+            .position(|window| window.active)
+            .or_else(|| (!session.windows.is_empty()).then_some(0));
+
+        if let Some(window_idx) = window_idx {
+            let window = &session.windows[window_idx];
+            if self.should_show_windows(session) {
+                return Some(Selection::Window(session_idx, window_idx));
+            }
+
+            if self.should_show_panes(session, window) {
+                let pane_idx = window
+                    .panes
+                    .iter()
+                    .position(|pane| pane.active)
+                    .or_else(|| (!window.panes.is_empty()).then_some(0))?;
+                return Some(Selection::Pane(session_idx, window_idx, pane_idx));
+            }
+        }
+
+        Some(Selection::Session(session_idx))
+    }
+
+    fn should_show_windows(&self, session: &crate::tmux::Session) -> bool {
+        session.windows.len() > 1
+    }
+
+    fn should_show_panes(
+        &self,
+        _session: &crate::tmux::Session,
+        window: &crate::tmux::Window,
+    ) -> bool {
+        window.panes.len() > 1
     }
 
     fn selected_target(&self) -> Option<TargetKind> {
