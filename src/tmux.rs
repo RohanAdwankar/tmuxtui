@@ -155,12 +155,29 @@ impl Tmux {
         self.run(["kill-session", "-t", session_id]).map(|_| ())
     }
 
-    pub fn new_window(&self, session_id: &str, name: &str) -> Result<()> {
+    pub fn new_window(&self, session_id: &str, name: &str) -> Result<String> {
         if name.is_empty() {
-            self.run(["new-window", "-d", "-t", session_id]).map(|_| ())
+            self.run([
+                "new-window",
+                "-P",
+                "-F",
+                "#{window_id}",
+                "-d",
+                "-t",
+                session_id,
+            ])
         } else {
-            self.run(["new-window", "-d", "-t", session_id, "-n", name])
-                .map(|_| ())
+            self.run([
+                "new-window",
+                "-P",
+                "-F",
+                "#{window_id}",
+                "-d",
+                "-t",
+                session_id,
+                "-n",
+                name,
+            ])
         }
     }
 
@@ -220,6 +237,16 @@ impl Tmux {
                 self.exec_attach(["attach-session", "-t", session_id])
             }
         }
+    }
+
+    pub fn last_target(&self) -> Option<(String, String, String)> {
+        let output = self.run(["show-options", "-gv", "@tmuxtui-return"]).ok()?;
+        let mut parts = output.split_whitespace();
+        Some((
+            parts.next()?.to_owned(),
+            parts.next()?.to_owned(),
+            parts.next()?.to_owned(),
+        ))
     }
 
     pub fn has_tmux_binary(&self) -> Result<()> {

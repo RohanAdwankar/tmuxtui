@@ -295,7 +295,14 @@ impl App {
                 match kind {
                     PromptKind::NewSession => self.tmux.create_session(&value)?,
                     PromptKind::NewWindow { session_id } => {
-                        self.tmux.new_window(&session_id, &value)?
+                        let window_id = self.tmux.new_window(&session_id, &value)?;
+                        self.mode = InputMode::Normal;
+                        self.input.clear();
+                        self.status = String::from("saved");
+                        self.refresh()?;
+                        self.selection = self.selection_for_window(&session_id, &window_id);
+                        self.refresh_preview()?;
+                        return Ok(());
                     }
                     PromptKind::RenameSession { session_id } => self
                         .tmux
@@ -664,12 +671,22 @@ impl App {
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
-        let session_idx = self
+        let attached_session_idx = self
             .snapshot
             .sessions
             .iter()
-            .position(|session| session.attached)
-            .or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
+            .position(|session| session.attached);
+
+        if attached_session_idx.is_none() {
+            if let Some((session_id, window_id, pane_id)) = self.tmux.last_target() {
+                if let Some(selection) = self.selection_for_ids(&session_id, &window_id, &pane_id) {
+                    return Some(selection);
+                }
+            }
+        }
+
+        let session_idx =
+            attached_session_idx.or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
         let session = self.snapshot.sessions.get(session_idx)?;
 
         let window_idx = session
@@ -692,6 +709,45 @@ impl App {
                     .or_else(|| (!window.panes.is_empty()).then_some(0))?;
                 return Some(Selection::Pane(session_idx, window_idx, pane_idx));
             }
+        }
+
+        Some(Selection::Session(session_idx))
+    }
+
+    fn selection_for_window(&self, session_id: &str, window_id: &str) -> Option<Selection> {
+        self.selection_for_ids(session_id, window_id, "")
+    }
+
+    fn selection_for_ids(
+        &self,
+        session_id: &str,
+        window_id: &str,
+        pane_id: &str,
+    ) -> Option<Selection> {
+        let session_idx = self
+            .snapshot
+            .sessions
+            .iter()
+            .position(|session| session.id == session_id)?;
+        let session = self.snapshot.sessions.get(session_idx)?;
+        let window_idx = session
+            .windows
+            .iter()
+            .position(|window| window.id == window_id)?;
+        let window = session.windows.get(window_idx)?;
+
+        if self.should_show_panes(session, window) {
+            let pane_idx = if pane_id.is_empty() {
+                window.panes.iter().position(|pane| pane.active)
+            } else {
+                window.panes.iter().position(|pane| pane.id == pane_id)
+            }
+            .or_else(|| (!window.panes.is_empty()).then_some(0))?;
+            return Some(Selection::Pane(session_idx, window_idx, pane_idx));
+        }
+
+        if self.should_show_windows(session) {
+            return Some(Selection::Window(session_idx, window_idx));
         }
 
         Some(Selection::Session(session_idx))
