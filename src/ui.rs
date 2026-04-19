@@ -135,9 +135,8 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let status = Paragraph::new(state.preview_status.clone())
         .style(Style::default().bg(Color::Indexed(34)).fg(Color::Black))
         .wrap(Wrap { trim: false });
-    let preview = Paragraph::new(state.preview_text.clone())
-        .style(Style::default().bg(Color::Indexed(234)))
-        .wrap(Wrap { trim: false });
+    let preview =
+        Paragraph::new(state.preview_text.clone()).style(Style::default().bg(Color::Indexed(234)));
 
     frame.render_widget(status, sections[0]);
     frame.render_widget(preview, sections[1]);
