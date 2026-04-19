@@ -1,0 +1,606 @@
+use std::time::{Duration, Instant};
+
+use anyhow::Result;
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
+};
+use ratatui::{Terminal, backend::CrosstermBackend};
+
+use crate::{
+    tmux::{Snapshot, TargetKind, Tmux},
+    ui::{Action, DrawState, draw},
+};
+
+const TICK_RATE: Duration = Duration::from_millis(200);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Focus {
+    Tree,
+    Preview,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InputMode {
+    Normal,
+    Filter,
+    Prompt(PromptKind),
+    Confirm(ConfirmAction),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromptKind {
+    NewSession,
+    NewWindow { session_id: String },
+    RenameSession { session_id: String },
+    RenameWindow { window_id: String },
+    RenamePane { pane_id: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConfirmAction {
+    KillSession { session_id: String, name: String },
+    KillWindow { window_id: String, name: String },
+    KillPane { pane_id: String, name: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Selection {
+    Session(usize),
+    Window(usize, usize),
+    Pane(usize, usize, usize),
+}
+
+pub struct App {
+    tmux: Tmux,
+    pub(crate) snapshot: Snapshot,
+    pub(crate) selection: Option<Selection>,
+    pub(crate) focus: Focus,
+    pub(crate) mode: InputMode,
+    pub(crate) filter: String,
+    pub(crate) input: String,
+    pub(crate) preview: String,
+    pub(crate) status: String,
+    last_refresh: Instant,
+    should_quit: bool,
+    attach_target: Option<TargetKind>,
+}
+
+impl App {
+    pub fn new(tmux: Tmux) -> Self {
+        Self {
+            tmux,
+            snapshot: Snapshot {
+                sessions: Vec::new(),
+            },
+            selection: None,
+            focus: Focus::Tree,
+            mode: InputMode::Normal,
+            filter: String::new(),
+            input: String::new(),
+            preview: String::new(),
+            status: String::new(),
+            last_refresh: Instant::now() - TICK_RATE,
+            should_quit: false,
+            attach_target: None,
+        }
+    }
+
+    pub fn run(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<Option<TargetKind>> {
+        self.tmux.has_tmux_binary()?;
+        self.refresh()?;
+
+        while !self.should_quit {
+            terminal.draw(|frame| {
+                let draw_state = DrawState::from_app(self);
+                draw(frame, &draw_state);
+            })?;
+
+            if event::poll(TICK_RATE)? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
+                    Event::Mouse(mouse) => {
+                        if mouse.kind == MouseEventKind::ScrollDown {
+                            self.move_selection(1);
+                        } else if mouse.kind == MouseEventKind::ScrollUp {
+                            self.move_selection(-1);
+                        }
+                    }
+                    Event::Resize(_, _) => {}
+                    _ => {}
+                }
+            }
+
+            if self.last_refresh.elapsed() >= TICK_RATE {
+                if let Err(error) = self.refresh() {
+                    self.status = error.to_string();
+                }
+            }
+        }
+
+        Ok(self.attach_target.clone())
+    }
+
+    fn handle_key(&mut self, key: KeyEvent) {
+        let result = match self.mode.clone() {
+            InputMode::Normal => self.handle_normal(key),
+            InputMode::Filter => self.handle_filter(key),
+            InputMode::Prompt(kind) => self.handle_prompt(key, kind),
+            InputMode::Confirm(action) => self.handle_confirm(key, action),
+        };
+
+        if let Err(error) = result {
+            self.status = error.to_string();
+        }
+    }
+
+    fn handle_filter(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Enter => {
+                self.filter = self.input.clone();
+                self.mode = InputMode::Normal;
+                self.refresh_preview()?;
+            }
+            _ => {
+                if self.handle_text_input(key, true) {
+                    self.refresh_preview()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Char('q') => self.should_quit = true,
+            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
+            KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Tree,
+            KeyCode::Char('l') | KeyCode::Right => self.focus = Focus::Preview,
+            KeyCode::Tab => self.toggle_focus(),
+            KeyCode::Enter => self.attach_selected()?,
+            KeyCode::Char('/') => {
+                self.mode = InputMode::Filter;
+                self.input = self.filter.clone();
+            }
+            KeyCode::Char('n') => self.start_create_prompt(),
+            KeyCode::Char('r') => self.start_rename_prompt(),
+            KeyCode::Char('x') => self.start_kill_prompt(),
+            KeyCode::Char('s') => self.split_selected()?,
+            KeyCode::Char('z') => self.zoom_selected()?,
+            KeyCode::Char('w') => self.start_new_window_prompt(),
+            KeyCode::Char('R') if key.modifiers.contains(KeyModifiers::SHIFT) => self.refresh()?,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_prompt(&mut self, key: KeyEvent, kind: PromptKind) -> Result<()> {
+        match key.code {
+            KeyCode::Enter => {
+                let value = self.input.trim().to_owned();
+                if value.is_empty() {
+                    self.status = "name cannot be empty".to_owned();
+                    return Ok(());
+                }
+                match kind {
+                    PromptKind::NewSession => self.tmux.create_session(&value)?,
+                    PromptKind::NewWindow { session_id } => {
+                        self.tmux.new_window(&session_id, &value)?
+                    }
+                    PromptKind::RenameSession { session_id } => {
+                        self.tmux.rename_session(&session_id, &value)?
+                    }
+                    PromptKind::RenameWindow { window_id } => {
+                        self.tmux.rename_window(&window_id, &value)?
+                    }
+                    PromptKind::RenamePane { pane_id } => {
+                        self.tmux.rename_pane(&pane_id, &value)?
+                    }
+                }
+                self.mode = InputMode::Normal;
+                self.input.clear();
+                self.status = format!("saved {value}");
+                self.refresh()?;
+            }
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+            }
+            _ => {
+                self.handle_text_input(key, false);
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_confirm(&mut self, key: KeyEvent, action: ConfirmAction) -> Result<()> {
+        match key.code {
+            KeyCode::Char('y') => {
+                match action {
+                    ConfirmAction::KillSession { session_id, .. } => {
+                        self.tmux.kill_session(&session_id)?
+                    }
+                    ConfirmAction::KillWindow { window_id, .. } => {
+                        self.tmux.kill_window(&window_id)?
+                    }
+                    ConfirmAction::KillPane { pane_id, .. } => self.tmux.kill_pane(&pane_id)?,
+                }
+                self.mode = InputMode::Normal;
+                self.status = String::from("removed");
+                self.refresh()?;
+            }
+            KeyCode::Char('n') | KeyCode::Esc => self.mode = InputMode::Normal,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn handle_text_input(&mut self, key: KeyEvent, is_filter: bool) -> bool {
+        match key.code {
+            KeyCode::Char(ch) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    return false;
+                }
+                self.input.push(ch);
+                if is_filter {
+                    self.filter = self.input.clone();
+                    self.reconcile_selection();
+                }
+                true
+            }
+            KeyCode::Backspace => {
+                self.input.pop();
+                if is_filter {
+                    self.filter = self.input.clone();
+                    self.reconcile_selection();
+                }
+                true
+            }
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+                if is_filter {
+                    self.filter.clear();
+                    self.reconcile_selection();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn toggle_focus(&mut self) {
+        self.focus = match self.focus {
+            Focus::Tree => Focus::Preview,
+            Focus::Preview => Focus::Tree,
+        };
+    }
+
+    fn start_create_prompt(&mut self) {
+        self.input.clear();
+        self.mode = InputMode::Prompt(PromptKind::NewSession);
+    }
+
+    fn start_new_window_prompt(&mut self) {
+        if let Some(selection) = self.selection.clone() {
+            let session_id = match selection {
+                Selection::Session(session_idx) => self
+                    .snapshot
+                    .sessions
+                    .get(session_idx)
+                    .map(|session| session.id.clone()),
+                Selection::Window(session_idx, _) | Selection::Pane(session_idx, _, _) => self
+                    .snapshot
+                    .sessions
+                    .get(session_idx)
+                    .map(|session| session.id.clone()),
+            };
+            if let Some(session_id) = session_id {
+                self.input.clear();
+                self.mode = InputMode::Prompt(PromptKind::NewWindow { session_id });
+            }
+        }
+    }
+
+    fn start_rename_prompt(&mut self) {
+        self.input.clear();
+        self.mode = match self.selection.clone() {
+            Some(Selection::Session(session_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .map(|session| {
+                    self.input = session.name.clone();
+                    InputMode::Prompt(PromptKind::RenameSession {
+                        session_id: session.id.clone(),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            Some(Selection::Window(session_idx, window_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .and_then(|session| session.windows.get(window_idx))
+                .map(|window| {
+                    self.input = window.name.clone();
+                    InputMode::Prompt(PromptKind::RenameWindow {
+                        window_id: window.id.clone(),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            Some(Selection::Pane(session_idx, window_idx, pane_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .and_then(|session| session.windows.get(window_idx))
+                .and_then(|window| window.panes.get(pane_idx))
+                .map(|pane| {
+                    self.input = pane_label(pane);
+                    InputMode::Prompt(PromptKind::RenamePane {
+                        pane_id: pane.id.clone(),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            None => InputMode::Normal,
+        };
+    }
+
+    fn start_kill_prompt(&mut self) {
+        self.mode = match self.selection.clone() {
+            Some(Selection::Session(session_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .map(|session| {
+                    InputMode::Confirm(ConfirmAction::KillSession {
+                        session_id: session.id.clone(),
+                        name: session.name.clone(),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            Some(Selection::Window(session_idx, window_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .and_then(|session| session.windows.get(window_idx))
+                .map(|window| {
+                    InputMode::Confirm(ConfirmAction::KillWindow {
+                        window_id: window.id.clone(),
+                        name: window.name.clone(),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            Some(Selection::Pane(session_idx, window_idx, pane_idx)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .and_then(|session| session.windows.get(window_idx))
+                .and_then(|window| window.panes.get(pane_idx))
+                .map(|pane| {
+                    InputMode::Confirm(ConfirmAction::KillPane {
+                        pane_id: pane.id.clone(),
+                        name: pane_label(pane),
+                    })
+                })
+                .unwrap_or(InputMode::Normal),
+            None => InputMode::Normal,
+        };
+    }
+
+    fn split_selected(&mut self) -> Result<()> {
+        if let Some(pane_id) = self.selected_pane_id() {
+            self.tmux.split_pane(&pane_id)?;
+            self.refresh()?;
+        }
+        Ok(())
+    }
+
+    fn zoom_selected(&mut self) -> Result<()> {
+        if let Some(pane_id) = self.selected_pane_id() {
+            self.tmux.toggle_zoom(&pane_id)?;
+            self.refresh()?;
+        }
+        Ok(())
+    }
+
+    fn attach_selected(&mut self) -> Result<()> {
+        if let Some(target) = self.selected_target() {
+            self.attach_target = Some(target);
+            self.should_quit = true;
+        }
+        Ok(())
+    }
+
+    fn refresh(&mut self) -> Result<()> {
+        self.snapshot = self.tmux.snapshot()?;
+        self.reconcile_selection();
+        self.refresh_preview()?;
+        self.last_refresh = Instant::now();
+        Ok(())
+    }
+
+    fn reconcile_selection(&mut self) {
+        let visible = self.visible_rows();
+        if visible.is_empty() {
+            self.selection = None;
+            return;
+        }
+
+        if let Some(current) = &self.selection {
+            if visible.iter().any(|item| *item == *current) {
+                return;
+            }
+        }
+        self.selection = visible.first().cloned();
+    }
+
+    fn refresh_preview(&mut self) -> Result<()> {
+        self.preview = if let Some(pane_id) = self.selected_pane_id() {
+            self.tmux.capture_pane(&pane_id)?
+        } else {
+            String::from("No pane selected")
+        };
+        Ok(())
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        let visible = self.visible_rows();
+        if visible.is_empty() {
+            self.selection = None;
+            return;
+        }
+
+        let current = self
+            .selection
+            .as_ref()
+            .and_then(|selection| visible.iter().position(|item| item == selection))
+            .unwrap_or(0);
+
+        let next = if delta.is_negative() {
+            current.saturating_sub(delta.unsigned_abs())
+        } else {
+            (current + delta as usize).min(visible.len().saturating_sub(1))
+        };
+        self.selection = Some(visible[next].clone());
+    }
+
+    pub(crate) fn visible_rows(&self) -> Vec<Selection> {
+        let needle = self.filter.to_lowercase();
+        let mut rows = Vec::new();
+        for (session_idx, session) in self.snapshot.sessions.iter().enumerate() {
+            let session_match = self.matches_filter(&session.name, &needle);
+            if session_match {
+                rows.push(Selection::Session(session_idx));
+            }
+            for (window_idx, window) in session.windows.iter().enumerate() {
+                let window_match = self.matches_filter(&window.name, &needle);
+                if session_match || window_match {
+                    rows.push(Selection::Window(session_idx, window_idx));
+                }
+                for (pane_idx, pane) in window.panes.iter().enumerate() {
+                    let pane_match = self.matches_filter(&pane_label(pane), &needle)
+                        || self.matches_filter(&pane.current_command, &needle)
+                        || self.matches_filter(&pane.current_path, &needle);
+                    if session_match || window_match || pane_match {
+                        rows.push(Selection::Pane(session_idx, window_idx, pane_idx));
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    fn matches_filter(&self, haystack: &str, needle: &str) -> bool {
+        needle.is_empty() || haystack.to_lowercase().contains(needle)
+    }
+
+    fn selected_target(&self) -> Option<TargetKind> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| TargetKind::Session(session.id.clone())),
+            Selection::Window(session_idx, window_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .map(|window| TargetKind::Window {
+                    session_id: self.snapshot.sessions[*session_idx].id.clone(),
+                    window_id: window.id.clone(),
+                }),
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| window.panes.get(*pane_idx))
+                .map(|pane| TargetKind::Pane {
+                    session_id: self.snapshot.sessions[*session_idx].id.clone(),
+                    window_id: self.snapshot.sessions[*session_idx].windows[*window_idx]
+                        .id
+                        .clone(),
+                    pane_id: pane.id.clone(),
+                }),
+        }
+    }
+
+    fn selected_pane_id(&self) -> Option<String> {
+        match self.selection.as_ref()? {
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| window.panes.get(*pane_idx))
+                .map(|pane| pane.id.clone()),
+            Selection::Window(session_idx, window_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| {
+                    window
+                        .panes
+                        .iter()
+                        .find(|pane| pane.active)
+                        .or_else(|| window.panes.first())
+                })
+                .map(|pane| pane.id.clone()),
+            Selection::Session(session_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| {
+                    session
+                        .windows
+                        .iter()
+                        .find(|window| window.active)
+                        .or_else(|| session.windows.first())
+                })
+                .and_then(|window| {
+                    window
+                        .panes
+                        .iter()
+                        .find(|pane| pane.active)
+                        .or_else(|| window.panes.first())
+                })
+                .map(|pane| pane.id.clone()),
+        }
+    }
+
+    pub fn actions(&self) -> Vec<Action<'static>> {
+        let mut actions = vec![
+            Action::new("enter", "attach"),
+            Action::new("j/k", "move"),
+            Action::new("/", "filter"),
+            Action::new("n", "new session"),
+            Action::new("w", "new window"),
+            Action::new("r", "rename"),
+            Action::new("x", "kill"),
+            Action::new("s", "split"),
+            Action::new("z", "zoom"),
+            Action::new("tab", "focus"),
+            Action::new("q", "quit"),
+        ];
+        if !matches!(self.mode, InputMode::Normal) {
+            actions = vec![
+                Action::new("enter", "confirm"),
+                Action::new("esc", "cancel"),
+            ];
+        }
+        actions
+    }
+}
+
+fn pane_label(pane: &crate::tmux::Pane) -> String {
+    if pane.title.trim().is_empty() {
+        pane.id.clone()
+    } else {
+        pane.title.clone()
+    }
+}
