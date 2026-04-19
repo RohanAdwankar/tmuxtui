@@ -162,30 +162,36 @@ impl Tmux {
         self.run(["kill-session", "-t", session_id]).map(|_| ())
     }
 
-    pub fn new_window(&self, session_id: &str, name: &str) -> Result<String> {
-        let output = if name.is_empty() {
-            self.run([
-                "new-window",
-                "-P",
-                "-F",
-                "#{window_id}",
-                "-d",
-                "-t",
-                session_id,
-            ])
-        } else {
-            self.run([
-                "new-window",
-                "-P",
-                "-F",
-                "#{window_id}",
-                "-d",
-                "-t",
-                session_id,
-                "-n",
-                name,
-            ])
-        }?;
+    pub fn new_window(
+        &self,
+        session_id: &str,
+        base_window_id: Option<&str>,
+        name: &str,
+    ) -> Result<String> {
+        let mut args = vec![
+            "new-window",
+            "-P",
+            "-F",
+            "#{window_id}",
+            "-d",
+            "-t",
+            session_id,
+        ];
+
+        let start_path = match base_window_id {
+            Some(window_id) => Some(self.window_current_path(window_id)?),
+            None => None,
+        };
+        if let Some(path) = start_path.as_deref() {
+            args.push("-c");
+            args.push(path);
+        }
+        if !name.is_empty() {
+            args.push("-n");
+            args.push(name);
+        }
+
+        let output = self.run(args)?;
         Ok(output.trim().to_owned())
     }
 
@@ -208,6 +214,17 @@ impl Tmux {
             "-v",
         ])
         .map(|_| ())
+    }
+
+    fn window_current_path(&self, window_id: &str) -> Result<String> {
+        self.run([
+            "display-message",
+            "-p",
+            "-t",
+            window_id,
+            "#{pane_current_path}",
+        ])
+        .map(|output| output.trim().to_owned())
     }
 
     pub fn rename_pane(&self, pane_id: &str, name: &str) -> Result<()> {
@@ -315,7 +332,11 @@ impl Tmux {
         }
     }
 
-    fn run<const N: usize>(&self, args: [&str; N]) -> Result<String> {
+    fn run<I, S>(&self, args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         run_command("tmux", args)
     }
 
@@ -334,7 +355,11 @@ impl Tmux {
         Ok(())
     }
 
-    fn run_or_empty<const N: usize>(&self, args: [&str; N]) -> Result<String> {
+    fn run_or_empty<I, S>(&self, args: I) -> Result<String>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         match self.run(args) {
             Ok(output) => Ok(output),
             Err(error) if is_no_server_error(&error) => Ok(String::new()),

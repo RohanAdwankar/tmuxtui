@@ -29,10 +29,19 @@ pub enum InputMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptKind {
     NewSession,
-    NewWindow { session_id: String },
-    RenameSession { session_id: String },
-    RenameWindow { window_id: String },
-    RenamePane { pane_id: String },
+    NewWindow {
+        session_id: String,
+        base_window_id: Option<String>,
+    },
+    RenameSession {
+        session_id: String,
+    },
+    RenameWindow {
+        window_id: String,
+    },
+    RenamePane {
+        pane_id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -319,8 +328,13 @@ impl App {
                 let value = self.input.trim().to_owned();
                 match kind {
                     PromptKind::NewSession => self.tmux.create_session(&value)?,
-                    PromptKind::NewWindow { session_id } => {
-                        let window_id = self.tmux.new_window(&session_id, &value)?;
+                    PromptKind::NewWindow {
+                        session_id,
+                        base_window_id,
+                    } => {
+                        let window_id =
+                            self.tmux
+                                .new_window(&session_id, base_window_id.as_deref(), &value)?;
                         self.mode = InputMode::Normal;
                         self.input.clear();
                         self.status = String::from("saved");
@@ -428,21 +442,22 @@ impl App {
 
     fn start_new_window_prompt(&mut self) {
         if let Some(selection) = self.selection.clone() {
-            let session_id = match selection {
-                Selection::Session(session_idx) => self
-                    .snapshot
-                    .sessions
-                    .get(session_idx)
-                    .map(|session| session.id.clone()),
-                Selection::Window(session_idx, _) | Selection::Pane(session_idx, _, _) => self
-                    .snapshot
-                    .sessions
-                    .get(session_idx)
-                    .map(|session| session.id.clone()),
+            let session = match selection {
+                Selection::Session(session_idx)
+                | Selection::Window(session_idx, _)
+                | Selection::Pane(session_idx, _, _) => self.snapshot.sessions.get(session_idx),
             };
-            if let Some(session_id) = session_id {
+            if let Some(session) = session {
                 self.input.clear();
-                self.mode = InputMode::Prompt(PromptKind::NewWindow { session_id });
+                self.mode = InputMode::Prompt(PromptKind::NewWindow {
+                    session_id: session.id.clone(),
+                    base_window_id: session
+                        .windows
+                        .iter()
+                        .find(|window| window.active)
+                        .or_else(|| session.windows.first())
+                        .map(|window| window.id.clone()),
+                });
             }
         }
     }
@@ -1079,7 +1094,7 @@ fn pane_label(pane: &crate::tmux::Pane) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, Selection};
+    use super::{App, InputMode, PromptKind, Selection};
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -1111,6 +1126,23 @@ mod tests {
             Some(crate::tmux::TargetKind::Window { session_id, window_id })
                 if session_id == "$1" && window_id == "@2"
         ));
+    }
+
+    #[test]
+    fn new_window_prompt_uses_active_window_as_base() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", false), ("@2", "beta", true)]);
+        app.selection = Some(Selection::Session(0));
+
+        app.start_new_window_prompt();
+
+        assert_eq!(
+            app.mode,
+            InputMode::Prompt(PromptKind::NewWindow {
+                session_id: String::from("$1"),
+                base_window_id: Some(String::from("@2")),
+            })
+        );
     }
 
     fn test_app() -> App {
