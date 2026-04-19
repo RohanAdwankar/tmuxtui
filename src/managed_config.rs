@@ -26,6 +26,7 @@ bind -n C-h if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}
 bind -n C-j if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-j' 'select-pane -D'
 bind -n C-k if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-k' 'select-pane -U'
 bind -n C-l if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-l' 'select-pane -R'
+bind -n C-q detach-client
 "##;
 
 #[derive(Clone, Debug)]

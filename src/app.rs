@@ -585,6 +585,7 @@ impl App {
             Action::new("s", "split"),
             Action::new("z", "zoom"),
             Action::new("tab", "focus"),
+            Action::new("^q", "leave tmux"),
             Action::new("q", "quit"),
         ];
         if !matches!(self.mode, InputMode::Normal) {

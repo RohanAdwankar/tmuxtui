@@ -1,9 +1,9 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use crate::{
@@ -126,16 +126,17 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
 
     let main = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(34), Constraint::Percentage(66)])
+        .constraints([
+            Constraint::Percentage(34),
+            Constraint::Length(1),
+            Constraint::Percentage(66),
+        ])
         .split(outer[0]);
 
     draw_tree(frame, main[0], state);
-    draw_preview(frame, main[1], state);
+    draw_divider(frame, main[1]);
+    draw_preview(frame, main[2], state);
     draw_footer(frame, outer[1], state);
-
-    if !matches!(state.mode, InputMode::Normal) {
-        draw_overlay(frame, state);
-    }
 }
 
 fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
@@ -150,6 +151,12 @@ fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     frame.render_widget(paragraph, area);
 }
 
+fn draw_divider(frame: &mut Frame<'_>, area: Rect) {
+    let lines = vec![Line::from("│"); area.height as usize];
+    let paragraph = Paragraph::new(Text::from(lines)).style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(paragraph, area);
+}
+
 fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let paragraph = Paragraph::new(state.preview_text.clone())
         .block(Block::default().title(state.preview_title.clone()))
@@ -160,31 +167,36 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let mut spans = Vec::new();
     if !state.status.is_empty() {
-        spans.push(Span::raw(format!("{}   ", state.status)));
-    }
-    if !state.filter.is_empty() {
-        spans.push(Span::raw(format!("filter:{}   ", state.filter)));
+        spans.push(Span::styled(
+            format!(" {} ", state.status),
+            Style::default().fg(Color::Black).bg(Color::Gray),
+        ));
+        spans.push(Span::raw(" "));
     }
     for action in &state.footer {
         spans.push(Span::styled(
-            format!("{} ", action.key),
-            Style::default().add_modifier(Modifier::BOLD),
+            format!(" {} ", action.key),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ));
-        spans.push(Span::raw(format!("{}   ", action.label)));
+        spans.push(Span::raw(format!("{} ", action.label)));
     }
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
-}
-
-fn draw_overlay(frame: &mut Frame<'_>, state: &DrawState<'_>) {
-    let area = centered_rect(60, 3, frame.area());
-    frame.render_widget(Clear, area);
-    let text = match state.mode {
-        InputMode::Filter => format!("filter: {}", state.filter),
-        InputMode::Prompt(kind) => format!("{}: {}", prompt_label(kind), current_input(state)),
-        InputMode::Confirm(action) => confirm_label(action),
-        InputMode::Normal => String::new(),
-    };
-    frame.render_widget(Paragraph::new(text).block(Block::default()), area);
+    if let Some(message) = command_message(state) {
+        spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+        spans.push(Span::styled(
+            message,
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+    let paragraph = Paragraph::new(Line::from(spans))
+        .block(Block::default().borders(Borders::TOP))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, area);
 }
 
 fn current_input(state: &DrawState<'_>) -> String {
@@ -192,6 +204,17 @@ fn current_input(state: &DrawState<'_>) -> String {
         InputMode::Prompt(_) => state.input.to_owned(),
         InputMode::Filter => state.filter.to_owned(),
         _ => String::new(),
+    }
+}
+
+fn command_message(state: &DrawState<'_>) -> Option<String> {
+    match state.mode {
+        InputMode::Normal => None,
+        InputMode::Filter => Some(format!(" filter {}", current_input(state))),
+        InputMode::Prompt(kind) => {
+            Some(format!(" {} {}", prompt_label(kind), current_input(state)))
+        }
+        InputMode::Confirm(action) => Some(format!(" {}", confirm_label(action))),
     }
 }
 
@@ -219,24 +242,4 @@ fn pane_name(pane: &Pane) -> &str {
     } else {
         &pane.title
     }
-}
-
-fn centered_rect(width_percent: u16, height: u16, area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(height),
-            Constraint::Min(0),
-        ])
-        .split(area);
-    let horizontal = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage((100 - width_percent) / 2),
-            Constraint::Percentage(width_percent),
-            Constraint::Percentage((100 - width_percent) / 2),
-        ])
-        .split(vertical[1]);
-    horizontal[1]
 }
