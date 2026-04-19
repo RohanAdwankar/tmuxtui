@@ -657,12 +657,14 @@ impl App {
             self.selection = Some(selection);
             return;
         }
-        if let Some(selection) = previous_selection
-            .and_then(|selection| self.selection_adjacent_to_removed_session(selection))
-            .filter(|selection| visible.iter().any(|item| item == selection))
-        {
-            self.selection = Some(selection);
-            return;
+        if previous_selection.is_some() {
+            if let Some(selection) = self
+                .selection_adjacent_to_removed_session(previous_index, &visible)
+                .filter(|selection| visible.iter().any(|item| item == selection))
+            {
+                self.selection = Some(selection);
+                return;
+            }
         }
         if let Some(index) = previous_index {
             if let Some(selection) = visible.get(index).or_else(|| visible.last()).cloned() {
@@ -932,19 +934,35 @@ impl App {
         Some(Selection::Session(session_idx))
     }
 
-    fn selection_adjacent_to_removed_session(&self, selection: &SelectionKey) -> Option<Selection> {
-        if selection.window_id.is_some() || selection.pane_id.is_some() {
-            return None;
+    fn selection_adjacent_to_removed_session(
+        &self,
+        previous_index: Option<usize>,
+        visible: &[Selection],
+    ) -> Option<Selection> {
+        let start = previous_index
+            .map(|index| index.min(visible.len().saturating_sub(1)))
+            .unwrap_or(0);
+
+        for offset in 0..visible.len() {
+            if let Some(selection) = start
+                .checked_sub(offset)
+                .and_then(|index| visible.get(index))
+                .filter(|selection| matches!(selection, Selection::Session(_)))
+            {
+                return Some(selection.clone());
+            }
+            if offset == 0 {
+                continue;
+            }
+            if let Some(selection) = visible
+                .get(start + offset)
+                .filter(|selection| matches!(selection, Selection::Session(_)))
+            {
+                return Some(selection.clone());
+            }
         }
 
-        let insert_idx = self
-            .snapshot
-            .sessions
-            .iter()
-            .position(|session| session.id > selection.session_id)
-            .unwrap_or(self.snapshot.sessions.len());
-        let session_idx = insert_idx.min(self.snapshot.sessions.len().saturating_sub(1));
-        Some(Selection::Session(session_idx))
+        None
     }
     fn selection_for_ids(
         &self,
@@ -1376,6 +1394,79 @@ mod tests {
         let previous_selection = app.selection_key();
         app.snapshot.sessions.remove(1);
         app.reconcile_selection(previous_selection.as_ref(), Some(3));
+
+        assert_eq!(app.selection, Some(Selection::Session(0)));
+    }
+
+    #[test]
+    fn reconcile_selection_uses_adjacent_session_when_window_in_removed_session_was_selected() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![
+                Session {
+                    id: String::from("$1"),
+                    name: String::from("alpha"),
+                    attached: true,
+                    windows: vec![
+                        Window {
+                            id: String::from("@1"),
+                            name: String::from("main"),
+                            active: true,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%1"),
+                                title: String::from("shell"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp/alpha"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            }],
+                        },
+                        Window {
+                            id: String::from("@2"),
+                            name: String::from("recent"),
+                            active: false,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%2"),
+                                title: String::from("shell"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp/alpha"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@2"),
+                            }],
+                        },
+                    ],
+                },
+                Session {
+                    id: String::from("$2"),
+                    name: String::from("beta"),
+                    attached: false,
+                    windows: vec![Window {
+                        id: String::from("@3"),
+                        name: String::from("main"),
+                        active: true,
+                        session_id: String::from("$2"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            title: String::from("shell"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp/beta"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@3"),
+                        }],
+                    }],
+                },
+            ],
+        };
+        app.selection = Some(Selection::Window(1, 0));
+
+        let previous_selection = app.selection_key();
+        app.snapshot.sessions.remove(1);
+        app.reconcile_selection(previous_selection.as_ref(), Some(4));
 
         assert_eq!(app.selection, Some(Selection::Session(0)));
     }
