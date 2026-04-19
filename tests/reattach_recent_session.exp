@@ -1,0 +1,55 @@
+#!/usr/bin/expect -f
+
+if {$argc != 5} {
+    puts stderr "usage: reattach_recent_session.exp <binary> <tmux_tmpdir> <result_file> <ready_file> <continue_file>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set result_file [lindex $argv 2]
+set ready_file [lindex $argv 3]
+set continue_file [lindex $argv 4]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- "j"
+after 300
+send -- "\r"
+after 1500
+send -- "touch marker\r"
+after 500
+send -- "\021"
+after 1500
+close [open $ready_file w]
+
+for {set attempt 0} {$attempt < 120} {incr attempt} {
+    if {[file exists $continue_file]} {
+        break
+    }
+    after 100
+}
+
+if {![file exists $continue_file]} {
+    puts stderr "timed out waiting for continue file"
+    exit 1
+}
+
+send -- "\r"
+after 1500
+send -- "test -e marker && pwd > '$result_file' || printf missing > '$result_file'\r"
+
+for {set attempt 0} {$attempt < 120} {incr attempt} {
+    if {[file exists $result_file]} {
+        exit 0
+    }
+    after 100
+}
+
+puts stderr "timed out waiting for result file"
+exit 1
