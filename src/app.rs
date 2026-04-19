@@ -626,6 +626,13 @@ impl App {
             self.selection = Some(selection);
             return;
         }
+        if let Some(selection) = previous_selection
+            .and_then(|selection| self.selection_in_previous_session(selection))
+            .filter(|selection| visible.iter().any(|item| item == selection))
+        {
+            self.selection = Some(selection);
+            return;
+        }
         self.selection = self
             .preferred_selection()
             .filter(|selection| visible.iter().any(|item| item == selection))
@@ -831,6 +838,61 @@ impl App {
             .iter()
             .position(|session| session.id == selection.session_id)
             .map(Selection::Session)
+    }
+
+    fn selection_in_previous_session(&self, selection: &SelectionKey) -> Option<Selection> {
+        let session_idx = self
+            .snapshot
+            .sessions
+            .iter()
+            .position(|session| session.id == selection.session_id)?;
+        let session = self.snapshot.sessions.get(session_idx)?;
+
+        if let Some(window_id) = selection.window_id.as_deref() {
+            if let Some(window_idx) = session
+                .windows
+                .iter()
+                .position(|window| window.id == window_id)
+            {
+                let window = session.windows.get(window_idx)?;
+                if self.should_show_panes(session, window) {
+                    let pane_idx = selection
+                        .pane_id
+                        .as_deref()
+                        .and_then(|pane_id| window.panes.iter().position(|pane| pane.id == pane_id))
+                        .or_else(|| window.panes.iter().position(|pane| pane.active))
+                        .or_else(|| (!window.panes.is_empty()).then_some(0))?;
+                    return Some(Selection::Pane(session_idx, window_idx, pane_idx));
+                }
+
+                if self.should_show_windows(session) {
+                    return Some(Selection::Window(session_idx, window_idx));
+                }
+            }
+
+            if let Some(window_idx) = session
+                .windows
+                .iter()
+                .position(|window| window.active)
+                .or_else(|| (!session.windows.is_empty()).then_some(0))
+            {
+                let window = session.windows.get(window_idx)?;
+                if self.should_show_panes(session, window) {
+                    let pane_idx = window
+                        .panes
+                        .iter()
+                        .position(|pane| pane.active)
+                        .or_else(|| (!window.panes.is_empty()).then_some(0))?;
+                    return Some(Selection::Pane(session_idx, window_idx, pane_idx));
+                }
+
+                if self.should_show_windows(session) {
+                    return Some(Selection::Window(session_idx, window_idx));
+                }
+            }
+        }
+
+        Some(Selection::Session(session_idx))
     }
     fn selection_for_ids(
         &self,
@@ -1118,6 +1180,79 @@ mod tests {
         app.reconcile_selection(previous_selection.as_ref());
 
         assert_eq!(app.selection, Some(Selection::Window(0, 0)));
+    }
+
+    #[test]
+    fn reconcile_selection_stays_in_same_session_when_window_is_removed() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![
+                Session {
+                    id: String::from("$1"),
+                    name: String::from("alpha"),
+                    attached: true,
+                    windows: vec![Window {
+                        id: String::from("@1"),
+                        name: String::from("main"),
+                        active: true,
+                        session_id: String::from("$1"),
+                        panes: vec![Pane {
+                            id: String::from("%1"),
+                            title: String::from("shell"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp/alpha"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        }],
+                    }],
+                },
+                Session {
+                    id: String::from("$2"),
+                    name: String::from("beta"),
+                    attached: false,
+                    windows: vec![
+                        Window {
+                            id: String::from("@2"),
+                            name: String::from("one"),
+                            active: true,
+                            session_id: String::from("$2"),
+                            panes: vec![Pane {
+                                id: String::from("%2"),
+                                title: String::from("shell"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp/beta"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@2"),
+                            }],
+                        },
+                        Window {
+                            id: String::from("@3"),
+                            name: String::from("two"),
+                            active: false,
+                            session_id: String::from("$2"),
+                            panes: vec![Pane {
+                                id: String::from("%3"),
+                                title: String::from("shell"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp/beta"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@3"),
+                            }],
+                        },
+                    ],
+                },
+            ],
+        };
+        app.selection = Some(Selection::Window(1, 1));
+
+        let previous_selection = app.selection_key();
+        app.snapshot.sessions[1].windows.remove(1);
+        app.reconcile_selection(previous_selection.as_ref());
+
+        assert_eq!(app.selection, Some(Selection::Session(1)));
     }
 
     #[test]

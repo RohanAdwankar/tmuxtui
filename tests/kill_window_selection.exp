@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+
+if {$argc != 3} {
+    puts stderr "usage: kill_window_selection.exp <binary> <tmux_tmpdir> <result_file>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set result_file [lindex $argv 2]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- "d"
+after 300
+send -- "y"
+after 500
+send -- "\r"
+after 1500
+send -- "tmux display-message -p '#S:#W' > '$result_file'\r"
+
+for {set attempt 0} {$attempt < 100} {incr attempt} {
+    if {[file exists $result_file]} {
+        exit 0
+    }
+    after 100
+}
+
+puts stderr "timed out waiting for result file"
+exit 1
