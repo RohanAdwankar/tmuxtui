@@ -135,7 +135,16 @@ impl Tmux {
     }
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<String> {
-        self.run(["capture-pane", "-p", "-t", pane_id, "-S", "-120"])
+        self.run([
+            "capture-pane",
+            "-a",
+            "-J",
+            "-p",
+            "-t",
+            pane_id,
+            "-S",
+            "-120",
+        ])
     }
 
     pub fn create_session(&self, name: &str) -> Result<()> {
