@@ -11,11 +11,12 @@ fn unique_temp_dir() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("time went backwards")
         .as_nanos();
-    env::temp_dir().join(format!("tmuxtui-e2e-{}-{nanos}", std::process::id()))
+    PathBuf::from(format!("/tmp/tt-{}-{nanos}", std::process::id()))
 }
 
 fn tmux(tmpdir: &Path, args: &[&str]) -> String {
     let output = Command::new("tmux")
+        .env_remove("TMUX")
         .env("TMUX_TMPDIR", tmpdir)
         .args(args)
         .output()
@@ -64,6 +65,7 @@ fn run_harness(launch_dir: &Path, tmux_tmpdir: &Path, result_file: &Path, touch_
         .arg(touch_name)
         .current_dir(launch_dir)
         .stdin(Stdio::null())
+        .env_remove("TMUX")
         .status()
         .expect("failed to run expect harness");
     assert!(status.success(), "expect harness failed with {status}");
@@ -82,6 +84,7 @@ fn assert_new_window_directory(initial_dir: &Path, expected_dir: &Path) {
 
     let cleanup = || {
         let _ = Command::new("tmux")
+            .env_remove("TMUX")
             .env("TMUX_TMPDIR", &tmux_tmpdir)
             .args(["kill-server"])
             .status();
@@ -101,6 +104,14 @@ fn assert_new_window_directory(initial_dir: &Path, expected_dir: &Path) {
             initial_dir.to_str().expect("initial dir utf-8"),
         ],
     );
+    let work_pane_id = tmux(
+        &tmux_tmpdir,
+        &["list-panes", "-t", "work", "-F", "#{pane_id}"],
+    )
+    .lines()
+    .next()
+    .expect("work pane id")
+    .to_owned();
 
     if initial_dir != expected_dir {
         tmux(
@@ -108,7 +119,7 @@ fn assert_new_window_directory(initial_dir: &Path, expected_dir: &Path) {
             &[
                 "send-keys",
                 "-t",
-                "work:1.1",
+                &work_pane_id,
                 &format!("cd '{}'", expected_dir.display()),
                 "C-m",
             ],
@@ -116,15 +127,14 @@ fn assert_new_window_directory(initial_dir: &Path, expected_dir: &Path) {
         thread::sleep(Duration::from_millis(300));
     }
 
-    set_last_target(&tmux_tmpdir, "work:1.1");
+    set_last_target(&tmux_tmpdir, &work_pane_id);
 
     run_harness(&launch_dir, &tmux_tmpdir, &result_file, touch_name);
 
     let pwd = fs::read_to_string(&result_file).expect("read result file");
-    assert_eq!(
-        pwd.trim(),
-        expected_dir.to_str().expect("expected dir utf-8")
-    );
+    let actual_dir = fs::canonicalize(pwd.trim()).expect("canonicalize actual dir");
+    let expected_dir = fs::canonicalize(expected_dir).expect("canonicalize expected dir");
+    assert_eq!(actual_dir, expected_dir);
     assert!(
         expected_dir.join(touch_name).exists(),
         "touch marker was not created by the attached shell"

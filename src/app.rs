@@ -29,19 +29,10 @@ pub enum InputMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptKind {
     NewSession,
-    NewWindow {
-        session_id: String,
-        start_path: Option<String>,
-    },
-    RenameSession {
-        session_id: String,
-    },
-    RenameWindow {
-        window_id: String,
-    },
-    RenamePane {
-        pane_id: String,
-    },
+    NewWindow { session_id: String },
+    RenameSession { session_id: String },
+    RenameWindow { window_id: String },
+    RenamePane { pane_id: String },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -328,13 +319,11 @@ impl App {
                 let value = self.input.trim().to_owned();
                 match kind {
                     PromptKind::NewSession => self.tmux.create_session(&value)?,
-                    PromptKind::NewWindow {
-                        session_id,
-                        start_path,
-                    } => {
+                    PromptKind::NewWindow { session_id } => {
+                        let base_pane_id = self.selected_pane_id();
                         let window_id =
                             self.tmux
-                                .new_window(&session_id, start_path.as_deref(), &value)?;
+                                .new_window(&session_id, base_pane_id.as_deref(), &value)?;
                         self.mode = InputMode::Normal;
                         self.input.clear();
                         self.status = String::from("saved");
@@ -442,38 +431,29 @@ impl App {
 
     fn start_new_window_prompt(&mut self) {
         if let Some(selection) = self.selection.clone() {
-            let prompt = match selection {
-                Selection::Session(session_idx) => {
-                    self.snapshot
-                        .sessions
-                        .get(session_idx)
-                        .map(|session| PromptKind::NewWindow {
-                            session_id: session.id.clone(),
-                            start_path: self.base_path_for_session(session),
-                        })
-                }
+            let session_id = match selection {
+                Selection::Session(session_idx) => self
+                    .snapshot
+                    .sessions
+                    .get(session_idx)
+                    .map(|session| session.id.clone()),
                 Selection::Window(session_idx, window_idx) => self
                     .snapshot
                     .sessions
                     .get(session_idx)
                     .and_then(|session| session.windows.get(window_idx))
-                    .map(|window| PromptKind::NewWindow {
-                        session_id: self.snapshot.sessions[session_idx].id.clone(),
-                        start_path: Self::base_path_for_window(window),
-                    }),
-                Selection::Pane(session_idx, window_idx, _) => self
+                    .map(|_| self.snapshot.sessions[session_idx].id.clone()),
+                Selection::Pane(session_idx, window_idx, pane_idx) => self
                     .snapshot
                     .sessions
                     .get(session_idx)
                     .and_then(|session| session.windows.get(window_idx))
-                    .map(|window| PromptKind::NewWindow {
-                        session_id: self.snapshot.sessions[session_idx].id.clone(),
-                        start_path: Self::base_path_for_window(window),
-                    }),
+                    .and_then(|window| window.panes.get(pane_idx))
+                    .map(|_| self.snapshot.sessions[session_idx].id.clone()),
             };
-            if let Some(prompt) = prompt {
+            if let Some(session_id) = session_id {
                 self.input.clear();
-                self.mode = InputMode::Prompt(prompt);
+                self.mode = InputMode::Prompt(PromptKind::NewWindow { session_id });
             }
         }
     }
@@ -968,20 +948,6 @@ impl App {
             .or_else(|| session.windows.first())
     }
 
-    fn base_path_for_session(&self, session: &crate::tmux::Session) -> Option<String> {
-        self.base_window_for_session(session)
-            .and_then(Self::base_path_for_window)
-    }
-
-    fn base_path_for_window(window: &crate::tmux::Window) -> Option<String> {
-        window
-            .panes
-            .iter()
-            .find(|pane| pane.active)
-            .or_else(|| window.panes.first())
-            .map(|pane| pane.current_path.clone())
-    }
-
     fn selected_pane_id(&self) -> Option<String> {
         match self.selection.as_ref()? {
             Selection::Pane(session_idx, window_idx, pane_idx) => self
@@ -1008,13 +974,7 @@ impl App {
                 .snapshot
                 .sessions
                 .get(*session_idx)
-                .and_then(|session| {
-                    session
-                        .windows
-                        .iter()
-                        .find(|window| window.active)
-                        .or_else(|| session.windows.first())
-                })
+                .and_then(|session| self.base_window_for_session(session))
                 .and_then(|window| {
                     window
                         .panes
@@ -1177,10 +1137,9 @@ mod tests {
     }
 
     #[test]
-    fn new_window_prompt_uses_active_window_path_as_start_path() {
+    fn new_window_prompt_uses_active_window_pane_as_base() {
         let mut app = test_app();
         app.snapshot = snapshot_with_windows(&[("@1", "alpha", false), ("@2", "beta", true)]);
-        app.snapshot.sessions[0].windows[1].panes[0].current_path = String::from("/tmp/beta");
         app.selection = Some(Selection::Session(0));
 
         app.start_new_window_prompt();
@@ -1189,7 +1148,6 @@ mod tests {
             app.mode,
             InputMode::Prompt(PromptKind::NewWindow {
                 session_id: String::from("$1"),
-                start_path: Some(String::from("/tmp/beta")),
             })
         );
     }
