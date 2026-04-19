@@ -1,0 +1,36 @@
+#!/usr/bin/expect -f
+
+if {$argc != 4} {
+    puts stderr "usage: new_window_path.exp <binary> <tmux_tmpdir> <result_file> <touch_name>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set result_file [lindex $argv 2]
+set touch_name [lindex $argv 3]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- "o\r"
+after 300
+send -- "\r"
+after 700
+send -- "\r"
+after 1500
+send -- "touch '$touch_name' && pwd > '$result_file'\r"
+
+for {set attempt 0} {$attempt < 100} {incr attempt} {
+    if {[file exists $result_file]} {
+        exit 0
+    }
+    after 100
+}
+
+puts stderr "timed out waiting for result file"
+exit 1
