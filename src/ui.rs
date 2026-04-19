@@ -38,34 +38,40 @@ impl<'a> DrawState<'a> {
     pub fn from_app(app: &'a App) -> Self {
         let mut tree_lines = Vec::new();
         let visible = app.visible_rows();
+        let multi_session = app.snapshot.sessions.len() > 1;
         for selection in visible {
             match selection {
                 Selection::Session(session_idx) => {
                     let session = &app.snapshot.sessions[session_idx];
-                    let attached = if session.attached { " *" } else { "" };
                     tree_lines.push(styled_line(
-                        format!("{}{}", session.name, attached),
+                        session.name.clone(),
                         app.selection.as_ref() == Some(&selection),
+                        session.attached && multi_session,
                         true,
                     ));
                 }
                 Selection::Window(session_idx, window_idx) => {
                     let window = &app.snapshot.sessions[session_idx].windows[window_idx];
-                    let active = if window.active { " *" } else { "" };
+                    let multi_window = app.snapshot.sessions[session_idx].windows.len() > 1;
                     tree_lines.push(styled_line(
-                        format!("  {}{}", window.name, active),
+                        format!("  {}", window.name),
                         app.selection.as_ref() == Some(&selection),
+                        window.active && multi_window,
                         false,
                     ));
                 }
                 Selection::Pane(session_idx, window_idx, pane_idx) => {
                     let pane =
                         &app.snapshot.sessions[session_idx].windows[window_idx].panes[pane_idx];
-                    let active = if pane.active { " *" } else { "" };
                     let zoom = if pane.zoomed { " z" } else { "" };
+                    let multi_pane = app.snapshot.sessions[session_idx].windows[window_idx]
+                        .panes
+                        .len()
+                        > 1;
                     tree_lines.push(styled_line(
-                        format!("    {}{}{}", pane_tree_label(pane), active, zoom),
+                        format!("    {}{}", pane_tree_label(pane), zoom),
                         app.selection.as_ref() == Some(&selection),
+                        pane.active && multi_pane,
                         false,
                     ));
                 }
@@ -217,10 +223,12 @@ fn pane_tree_label(pane: &Pane) -> String {
     }
 }
 
-fn styled_line<'a>(content: String, selected: bool, bold: bool) -> Line<'a> {
-    let mut style = Style::default();
+fn styled_line<'a>(content: String, selected: bool, active: bool, bold: bool) -> Line<'a> {
+    let mut style = Style::default().fg(Color::DarkGray);
     if selected {
         style = style.bg(Color::Indexed(34)).fg(Color::Black);
+    } else if active {
+        style = style.fg(Color::White);
     }
     if bold {
         style = style.add_modifier(Modifier::BOLD);
