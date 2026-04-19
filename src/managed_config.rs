@@ -163,7 +163,7 @@ set -g renumber-windows on
 setw -g automatic-rename on
 setw -g automatic-rename-format "#{pane_current_command}"
 setw -g aggressive-resize on
-set -g detach-on-destroy off
+set -g detach-on-destroy on
 set -g set-clipboard on
 set -g default-terminal "screen-256color"
 set -as terminal-features ",xterm-256color:RGB,screen-256color:RGB,tmux-256color:RGB"

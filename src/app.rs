@@ -754,12 +754,23 @@ impl App {
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
-        if let Some(selection) = self
-            .tmux
-            .last_target()
-            .and_then(|target| self.selection_from_last_target(&target))
-        {
-            return Some(selection);
+        if let Some(target) = self.tmux.last_target() {
+            if let Some(selection) = self.selection_from_last_target(&target) {
+                return Some(selection);
+            }
+
+            if let Some(session_idx) = self
+                .snapshot
+                .sessions
+                .iter()
+                .position(|session| session.attached)
+            {
+                return Some(Selection::Session(session_idx));
+            }
+
+            if !self.snapshot.sessions.is_empty() {
+                return Some(Selection::Session(0));
+            }
         }
 
         let attached_session_idx = self
