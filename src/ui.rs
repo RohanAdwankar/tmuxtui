@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Paragraph, Wrap},
 };
 
 use crate::{
@@ -100,27 +100,18 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
 
     let main = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(24),
-            Constraint::Length(1),
-            Constraint::Percentage(76),
-        ])
+        .constraints([Constraint::Percentage(24), Constraint::Percentage(76)])
         .split(outer[0]);
 
     draw_tree(frame, main[0], state);
-    draw_divider(frame, main[1]);
-    draw_preview(frame, main[2], state);
+    draw_preview(frame, main[1], state);
     draw_footer(frame, outer[1], state);
 }
 
 fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
-    let paragraph = Paragraph::new(Text::from(state.tree_lines.clone())).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, area);
-}
-
-fn draw_divider(frame: &mut Frame<'_>, area: Rect) {
-    let lines = vec![Line::from("│"); area.height as usize];
-    let paragraph = Paragraph::new(Text::from(lines)).style(Style::default().fg(Color::DarkGray));
+    let paragraph = Paragraph::new(Text::from(state.tree_lines.clone()))
+        .style(Style::default().bg(Color::Indexed(236)))
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }
 
@@ -133,7 +124,9 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let status = Paragraph::new(state.preview_status.clone())
         .style(Style::default().bg(Color::Indexed(34)).fg(Color::Black))
         .wrap(Wrap { trim: false });
-    let preview = Paragraph::new(state.preview_text.clone()).wrap(Wrap { trim: false });
+    let preview = Paragraph::new(state.preview_text.clone())
+        .style(Style::default().bg(Color::Indexed(234)))
+        .wrap(Wrap { trim: false });
 
     frame.render_widget(status, sections[0]);
     frame.render_widget(preview, sections[1]);
@@ -161,7 +154,7 @@ fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
         spans.push(Span::raw(message));
     }
     let paragraph = Paragraph::new(Line::from(spans))
-        .block(Block::default().borders(Borders::TOP))
+        .style(Style::default().bg(Color::Indexed(236)))
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
 }

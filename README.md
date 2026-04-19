@@ -12,14 +12,16 @@ The left tree shows:
 - windows inside each session
 - panes inside each window
 
-The `*` marker means the item is currently active at that level:
+The tree uses color to show state:
 
-| Marker | Meaning |
+| Color Or Marker | Meaning |
 | --- | --- |
-| session `*` | the session is attached |
-| window `*` | the window is the active window in its session |
-| pane `*` | the pane is the active pane in its window |
+| dark gray | default tree row |
+| white | tmux-active row among sibling rows where active state matters |
+| green highlight | the row currently selected in the TUI |
 | pane `z` | the pane is zoomed |
+
+Active-state color is only shown when there are sibling rows to disambiguate. For example, a lone pane in a window does not get a separate active marker.
 
 The preview pane on the right shows:
 

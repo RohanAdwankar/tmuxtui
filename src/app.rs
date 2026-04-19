@@ -120,6 +120,7 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) {
+        self.clear_transient_status();
         let result = match self.mode.clone() {
             InputMode::Normal => self.handle_normal(key),
             InputMode::Command => self.handle_command(key),
@@ -752,6 +753,12 @@ impl App {
 
     fn clear_count(&mut self) {
         self.count_prefix = None;
+    }
+
+    fn clear_transient_status(&mut self) {
+        if !self.status.is_empty() {
+            self.status.clear();
+        }
     }
 
     fn default_session_name(&self, value: &str) -> String {
