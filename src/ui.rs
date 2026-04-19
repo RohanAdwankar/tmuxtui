@@ -125,7 +125,7 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
         .split(area);
 
     let status = Paragraph::new(state.preview_status.clone())
-        .block(Block::default().borders(Borders::BOTTOM))
+        .style(Style::default().bg(Color::Indexed(34)).fg(Color::Black))
         .wrap(Wrap { trim: false });
     let preview = Paragraph::new(state.preview_text.clone()).wrap(Wrap { trim: false });
 

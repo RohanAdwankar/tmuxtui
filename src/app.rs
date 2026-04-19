@@ -1,9 +1,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind,
-};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use crate::{
@@ -64,6 +62,7 @@ pub struct App {
     last_refresh: Instant,
     should_quit: bool,
     attach_target: Option<TargetKind>,
+    count_prefix: Option<usize>,
 }
 
 impl App {
@@ -83,6 +82,7 @@ impl App {
             last_refresh: Instant::now() - TICK_RATE,
             should_quit: false,
             attach_target: None,
+            count_prefix: None,
         }
     }
 
@@ -102,13 +102,6 @@ impl App {
             if event::poll(TICK_RATE)? {
                 match event::read()? {
                     Event::Key(key) if key.kind == KeyEventKind::Press => self.handle_key(key),
-                    Event::Mouse(mouse) => {
-                        if mouse.kind == MouseEventKind::ScrollDown {
-                            self.move_selection(1);
-                        } else if mouse.kind == MouseEventKind::ScrollUp {
-                            self.move_selection(-1);
-                        }
-                    }
                     Event::Resize(_, _) => {}
                     _ => {}
                 }
@@ -175,30 +168,83 @@ impl App {
     }
 
     fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
+        if let KeyCode::Char(ch) = key.code {
+            if let Some(digit) = ch.to_digit(10) {
+                if digit > 0 || self.count_prefix.is_some() {
+                    self.push_count_digit(digit as usize);
+                    return Ok(());
+                }
+            }
+        }
+
         match key.code {
-            KeyCode::Char('q') => self.should_quit = true,
-            KeyCode::Char('j') | KeyCode::Down => self.move_selection(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_selection(-1),
-            KeyCode::Char('h') | KeyCode::Left => self.focus = Focus::Tree,
-            KeyCode::Char('l') | KeyCode::Right => self.focus = Focus::Preview,
-            KeyCode::Tab => self.toggle_focus(),
-            KeyCode::Enter => self.attach_selected()?,
+            KeyCode::Char('q') => {
+                self.clear_count();
+                self.should_quit = true;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                let count = self.take_count() as isize;
+                self.move_selection(count);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                let count = self.take_count() as isize;
+                self.move_selection(-count);
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.clear_count();
+                self.focus = Focus::Tree;
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.clear_count();
+                self.focus = Focus::Preview;
+            }
+            KeyCode::Tab => {
+                self.clear_count();
+                self.toggle_focus();
+            }
+            KeyCode::Enter => {
+                self.clear_count();
+                self.attach_selected()?;
+            }
             KeyCode::Char('/') => {
+                self.clear_count();
                 self.mode = InputMode::Filter;
                 self.input = self.filter.clone();
             }
             KeyCode::Char(':') => {
+                self.clear_count();
                 self.mode = InputMode::Command;
                 self.input.clear();
             }
-            KeyCode::Char('n') => self.start_create_prompt(),
-            KeyCode::Char('r') => self.start_rename_prompt(),
-            KeyCode::Char('x') => self.start_kill_prompt(),
-            KeyCode::Char('s') => self.split_selected()?,
-            KeyCode::Char('z') => self.zoom_selected()?,
-            KeyCode::Char('w') => self.start_new_window_prompt(),
-            KeyCode::Char('R') if key.modifiers.contains(KeyModifiers::SHIFT) => self.refresh()?,
-            _ => {}
+            KeyCode::Char('n') => {
+                self.clear_count();
+                self.start_create_prompt();
+            }
+            KeyCode::Char('r') => {
+                self.clear_count();
+                self.start_rename_prompt();
+            }
+            KeyCode::Char('x') => {
+                self.clear_count();
+                self.start_kill_prompt();
+            }
+            KeyCode::Char('s') => {
+                self.clear_count();
+                self.split_selected()?;
+            }
+            KeyCode::Char('z') => {
+                self.clear_count();
+                self.zoom_selected()?;
+            }
+            KeyCode::Char('w') => {
+                self.clear_count();
+                self.start_new_window_prompt();
+            }
+            KeyCode::Char('R') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.clear_count();
+                self.refresh()?;
+            }
+            _ => self.clear_count(),
         }
         Ok(())
     }
@@ -207,28 +253,24 @@ impl App {
         match key.code {
             KeyCode::Enter => {
                 let value = self.input.trim().to_owned();
-                if value.is_empty() {
-                    self.status = "name cannot be empty".to_owned();
-                    return Ok(());
-                }
                 match kind {
                     PromptKind::NewSession => self.tmux.create_session(&value)?,
                     PromptKind::NewWindow { session_id } => {
                         self.tmux.new_window(&session_id, &value)?
                     }
-                    PromptKind::RenameSession { session_id } => {
-                        self.tmux.rename_session(&session_id, &value)?
-                    }
-                    PromptKind::RenameWindow { window_id } => {
-                        self.tmux.rename_window(&window_id, &value)?
-                    }
+                    PromptKind::RenameSession { session_id } => self
+                        .tmux
+                        .rename_session(&session_id, &self.default_session_name(&value))?,
+                    PromptKind::RenameWindow { window_id } => self
+                        .tmux
+                        .rename_window(&window_id, &self.default_window_name(&window_id, &value))?,
                     PromptKind::RenamePane { pane_id } => {
                         self.tmux.rename_pane(&pane_id, &value)?
                     }
                 }
                 self.mode = InputMode::Normal;
                 self.input.clear();
-                self.status = format!("saved {value}");
+                self.status = String::from("saved");
                 self.refresh()?;
             }
             KeyCode::Esc => {
@@ -656,6 +698,66 @@ impl App {
 
     pub fn show_hints(&self) -> bool {
         self.tmux.show_hints()
+    }
+
+    fn push_count_digit(&mut self, digit: usize) {
+        let next = self.count_prefix.unwrap_or(0).saturating_mul(10) + digit;
+        self.count_prefix = Some(next.max(1));
+    }
+
+    fn take_count(&mut self) -> usize {
+        self.count_prefix.take().unwrap_or(1)
+    }
+
+    fn clear_count(&mut self) {
+        self.count_prefix = None;
+    }
+
+    fn default_session_name(&self, value: &str) -> String {
+        if !value.is_empty() {
+            return value.to_owned();
+        }
+
+        self.selection
+            .as_ref()
+            .and_then(|selection| match selection {
+                Selection::Session(session_idx) => self.snapshot.sessions.get(*session_idx),
+                Selection::Window(session_idx, _) | Selection::Pane(session_idx, _, _) => {
+                    self.snapshot.sessions.get(*session_idx)
+                }
+            })
+            .and_then(|session| {
+                session
+                    .windows
+                    .iter()
+                    .find(|window| window.active)
+                    .or_else(|| session.windows.first())
+            })
+            .map(|window| window.name.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| String::from("session"))
+    }
+
+    fn default_window_name(&self, window_id: &str, value: &str) -> String {
+        if !value.is_empty() {
+            return value.to_owned();
+        }
+
+        self.snapshot
+            .sessions
+            .iter()
+            .flat_map(|session| session.windows.iter())
+            .find(|window| window.id == window_id)
+            .and_then(|window| {
+                window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.active)
+                    .or_else(|| window.panes.first())
+            })
+            .map(|pane| pane.current_command.clone())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| String::from("window"))
     }
 }
 
