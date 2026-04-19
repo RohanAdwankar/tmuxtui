@@ -22,6 +22,7 @@ pub enum Focus {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
+    Command,
     Filter,
     Prompt(PromptKind),
     Confirm(ConfirmAction),
@@ -126,6 +127,7 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) {
         let result = match self.mode.clone() {
             InputMode::Normal => self.handle_normal(key),
+            InputMode::Command => self.handle_command(key),
             InputMode::Filter => self.handle_filter(key),
             InputMode::Prompt(kind) => self.handle_prompt(key, kind),
             InputMode::Confirm(action) => self.handle_confirm(key, action),
@@ -152,6 +154,26 @@ impl App {
         Ok(())
     }
 
+    fn handle_command(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Enter => {
+                let command = self.input.trim().to_owned();
+                self.input.clear();
+                self.mode = InputMode::Normal;
+                self.execute_command(&command)?;
+                self.refresh()?;
+            }
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+            }
+            _ => {
+                self.handle_text_input(key, false);
+            }
+        }
+        Ok(())
+    }
+
     fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
             KeyCode::Char('q') => self.should_quit = true,
@@ -164,6 +186,10 @@ impl App {
             KeyCode::Char('/') => {
                 self.mode = InputMode::Filter;
                 self.input = self.filter.clone();
+            }
+            KeyCode::Char(':') => {
+                self.mode = InputMode::Command;
+                self.input.clear();
             }
             KeyCode::Char('n') => self.start_create_prompt(),
             KeyCode::Char('r') => self.start_rename_prompt(),
@@ -414,6 +440,32 @@ impl App {
         Ok(())
     }
 
+    fn execute_command(&mut self, command: &str) -> Result<()> {
+        match command {
+            "hidehints" => {
+                self.tmux.set_show_hints(false)?;
+                self.status = String::from("hints hidden");
+            }
+            "showhints" => {
+                self.tmux.set_show_hints(true)?;
+                self.status = String::from("hints shown");
+            }
+            "hidestatus" => {
+                self.tmux.set_show_status(false)?;
+                self.status = String::from("tmux status hidden");
+            }
+            "showstatus" | "showstus" => {
+                self.tmux.set_show_status(true)?;
+                self.status = String::from("tmux status shown");
+            }
+            "" => {}
+            _ => {
+                self.status = format!("unknown command: {command}");
+            }
+        }
+        Ok(())
+    }
+
     fn refresh(&mut self) -> Result<()> {
         self.snapshot = self.tmux.snapshot()?;
         self.reconcile_selection();
@@ -574,8 +626,13 @@ impl App {
     }
 
     pub fn actions(&self) -> Vec<Action<'static>> {
+        if !self.tmux.show_hints() {
+            return Vec::new();
+        }
+
         let mut actions = vec![
             Action::new("enter", "attach"),
+            Action::new(":", "command"),
             Action::new("j/k", "move"),
             Action::new("/", "filter"),
             Action::new("n", "new session"),
@@ -595,6 +652,10 @@ impl App {
             ];
         }
         actions
+    }
+
+    pub fn show_hints(&self) -> bool {
+        self.tmux.show_hints()
     }
 }
 

@@ -66,11 +66,12 @@ impl Tmux {
 
     pub fn ensure_ready(&self) -> Result<()> {
         self.run_with_config(["start-server"])?;
-        self.run_or_empty([
-            "source-file",
-            self.managed.tmux_conf.to_string_lossy().as_ref(),
-        ])?;
+        self.reload_config()?;
         Ok(())
+    }
+
+    pub fn show_hints(&self) -> bool {
+        self.managed.settings().show_hints
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {
@@ -221,6 +222,16 @@ impl Tmux {
         }
     }
 
+    pub fn set_show_hints(&mut self, show_hints: bool) -> Result<()> {
+        self.managed.set_show_hints(show_hints)?;
+        self.reload_config()
+    }
+
+    pub fn set_show_status(&mut self, show_status: bool) -> Result<()> {
+        self.managed.set_show_status(show_status)?;
+        self.reload_config()
+    }
+
     fn exec_attach<const N: usize>(&self, args: [&str; N]) -> Result<()> {
         let status = Command::new("tmux")
             .args(args)
@@ -235,6 +246,14 @@ impl Tmux {
 
     fn run<const N: usize>(&self, args: [&str; N]) -> Result<String> {
         run_command("tmux", args)
+    }
+
+    fn reload_config(&self) -> Result<()> {
+        self.run_or_empty([
+            "source-file",
+            self.managed.tmux_conf.to_string_lossy().as_ref(),
+        ])?;
+        Ok(())
     }
 
     fn run_or_empty<const N: usize>(&self, args: [&str; N]) -> Result<String> {

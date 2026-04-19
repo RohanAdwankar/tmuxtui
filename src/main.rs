@@ -16,11 +16,11 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use crate::{app::App, managed_config::ManagedConfig, tmux::Tmux};
 
 fn main() -> Result<()> {
-    let managed = ManagedConfig::bootstrap()?;
-    let tmux = Tmux::new(managed.clone());
-    tmux.ensure_ready()?;
-
     loop {
+        let managed = ManagedConfig::bootstrap()?;
+        let tmux = Tmux::new(managed);
+        tmux.ensure_ready()?;
+
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;

@@ -27,6 +27,7 @@ pub struct DrawState<'a> {
     preview_title: String,
     preview_text: String,
     footer: Vec<Action<'a>>,
+    show_hints: bool,
     filter: &'a str,
     input: &'a str,
     status: &'a str,
@@ -109,6 +110,7 @@ impl<'a> DrawState<'a> {
             preview_title,
             preview_text: app.preview.clone(),
             footer: app.actions(),
+            show_hints: app.show_hints(),
             filter: &app.filter,
             input: &app.input,
             status: &app.status,
@@ -127,9 +129,9 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(34),
+            Constraint::Percentage(24),
             Constraint::Length(1),
-            Constraint::Percentage(66),
+            Constraint::Percentage(76),
         ])
         .split(outer[0]);
 
@@ -170,15 +172,19 @@ fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
         spans.push(Span::raw(state.status.to_string()));
         spans.push(Span::raw(" "));
     }
-    for action in &state.footer {
-        spans.push(Span::styled(
-            format!("{} ", action.key),
-            Style::default().add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(format!("{}  ", action.label)));
+    if state.show_hints {
+        for action in &state.footer {
+            spans.push(Span::styled(
+                format!("{} ", action.key),
+                Style::default().add_modifier(Modifier::BOLD),
+            ));
+            spans.push(Span::raw(format!("{}  ", action.label)));
+        }
     }
     if let Some(message) = command_message(state) {
-        spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+        if state.show_hints && !state.footer.is_empty() {
+            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+        }
         spans.push(Span::raw(message));
     }
     let paragraph = Paragraph::new(Line::from(spans))
@@ -189,6 +195,7 @@ fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 
 fn current_input(state: &DrawState<'_>) -> String {
     match state.mode {
+        InputMode::Command => state.input.to_owned(),
         InputMode::Prompt(_) => state.input.to_owned(),
         InputMode::Filter => state.filter.to_owned(),
         _ => String::new(),
@@ -198,7 +205,9 @@ fn current_input(state: &DrawState<'_>) -> String {
 fn command_message(state: &DrawState<'_>) -> Option<String> {
     match state.mode {
         InputMode::Normal => None,
-        InputMode::Filter => Some(format!("filter: {}", current_input(state))),
+        InputMode::Command => Some(format!(":{}", current_input(state))),
+        InputMode::Filter if state.show_hints => Some(format!("filter: {}", current_input(state))),
+        InputMode::Filter => Some(format!("/{}", current_input(state))),
         InputMode::Prompt(kind) => {
             Some(format!("{}: {}", prompt_label(kind), current_input(state)))
         }
