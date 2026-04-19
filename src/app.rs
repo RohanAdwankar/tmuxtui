@@ -671,20 +671,17 @@ impl App {
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
+        if let Some((session_id, window_id, pane_id)) = self.tmux.last_target() {
+            if let Some(selection) = self.selection_for_ids(&session_id, &window_id, &pane_id) {
+                return Some(selection);
+            }
+        }
+
         let attached_session_idx = self
             .snapshot
             .sessions
             .iter()
             .position(|session| session.attached);
-
-        if attached_session_idx.is_none() {
-            if let Some((session_id, window_id, pane_id)) = self.tmux.last_target() {
-                if let Some(selection) = self.selection_for_ids(&session_id, &window_id, &pane_id) {
-                    return Some(selection);
-                }
-            }
-        }
-
         let session_idx =
             attached_session_idx.or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
         let session = self.snapshot.sessions.get(session_idx)?;
