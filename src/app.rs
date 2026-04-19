@@ -880,6 +880,22 @@ impl App {
 
     fn selection_from_key(&self, selection: &SelectionKey) -> Option<Selection> {
         if let Some(window_id) = selection.window_id.as_deref() {
+            if selection.pane_id.is_none() {
+                let session_idx = self
+                    .snapshot
+                    .sessions
+                    .iter()
+                    .position(|session| session.id == selection.session_id)?;
+                let session = self.snapshot.sessions.get(session_idx)?;
+                let window_idx = session
+                    .windows
+                    .iter()
+                    .position(|window| window.id == window_id)?;
+
+                if self.should_show_windows(session) {
+                    return Some(Selection::Window(session_idx, window_idx));
+                }
+            }
             return self.selection_for_ids(
                 &selection.session_id,
                 window_id,
@@ -909,6 +925,9 @@ impl App {
                 .position(|window| window.id == window_id)
             {
                 let window = session.windows.get(window_idx)?;
+                if selection.pane_id.is_none() && self.should_show_windows(session) {
+                    return Some(Selection::Window(session_idx, window_idx));
+                }
                 if self.should_show_panes(session, window) {
                     let pane_idx = selection
                         .pane_id
@@ -1255,7 +1274,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, InputMode, PromptKind, Selection, pane_label};
+    use super::{App, InputMode, PromptKind, Selection, SelectionKey, pane_label};
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -1608,6 +1627,128 @@ mod tests {
         assert_eq!(
             app.selection_for_ids("$1", "@1", "%2"),
             Some(Selection::Pane(0, 0, 1))
+        );
+    }
+
+    #[test]
+    fn selection_from_key_keeps_window_row_when_split_pane_is_active() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: vec![
+                    Window {
+                        id: String::from("@1"),
+                        name: String::from("editor"),
+                        active: true,
+                        session_id: String::from("$1"),
+                        panes: vec![
+                            Pane {
+                                id: String::from("%1"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: false,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                            Pane {
+                                id: String::from("%2"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                        ],
+                    },
+                    Window {
+                        id: String::from("@2"),
+                        name: String::from("shell"),
+                        active: false,
+                        session_id: String::from("$1"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@2"),
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        assert_eq!(
+            app.selection_from_key(&SelectionKey {
+                session_id: String::from("$1"),
+                window_id: Some(String::from("@1")),
+                pane_id: None,
+            }),
+            Some(Selection::Window(0, 0))
+        );
+    }
+
+    #[test]
+    fn selection_in_previous_session_keeps_window_row_when_split_pane_is_active() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: vec![
+                    Window {
+                        id: String::from("@1"),
+                        name: String::from("editor"),
+                        active: true,
+                        session_id: String::from("$1"),
+                        panes: vec![
+                            Pane {
+                                id: String::from("%1"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: false,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                            Pane {
+                                id: String::from("%2"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                        ],
+                    },
+                    Window {
+                        id: String::from("@2"),
+                        name: String::from("shell"),
+                        active: false,
+                        session_id: String::from("$1"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@2"),
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        assert_eq!(
+            app.selection_in_previous_session(&SelectionKey {
+                session_id: String::from("$1"),
+                window_id: Some(String::from("@1")),
+                pane_id: None,
+            }),
+            Some(Selection::Window(0, 0))
         );
     }
 
