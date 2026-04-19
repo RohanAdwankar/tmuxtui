@@ -135,21 +135,19 @@ impl Tmux {
     }
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<String> {
-        match self.run([
-            "capture-pane",
-            "-a",
-            "-J",
-            "-p",
-            "-t",
-            pane_id,
-            "-S",
-            "-120",
-        ]) {
-            Ok(output) => Ok(output),
-            Err(error) if error.to_string().contains("no alternate screen") => {
-                self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
-            }
-            Err(error) => Err(error),
+        if self.pane_uses_alternate_screen(pane_id)? {
+            self.run([
+                "capture-pane",
+                "-a",
+                "-J",
+                "-p",
+                "-t",
+                pane_id,
+                "-S",
+                "-120",
+            ])
+        } else {
+            self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
         }
     }
 
@@ -305,6 +303,10 @@ impl Tmux {
 
     fn run<const N: usize>(&self, args: [&str; N]) -> Result<String> {
         run_command("tmux", args)
+    }
+
+    fn pane_uses_alternate_screen(&self, pane_id: &str) -> Result<bool> {
+        Ok(self.run(["display-message", "-p", "-t", pane_id, "#{alternate_on}"])? == "1\n")
     }
 
     fn reload_config(&self) -> Result<()> {
