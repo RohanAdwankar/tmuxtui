@@ -1,13 +1,14 @@
 #!/usr/bin/expect -f
 
-if {$argc != 3} {
-    puts stderr "usage: split_selection.exp <binary> <tmux_tmpdir> <result_file>"
+if {$argc != 4} {
+    puts stderr "usage: split_selection.exp <binary> <tmux_tmpdir> <keys> <result_file>"
     exit 2
 }
 
 set binary [lindex $argv 0]
 set tmux_tmpdir [lindex $argv 1]
-set result_file [lindex $argv 2]
+set keys [lindex $argv 2]
+set result_file [lindex $argv 3]
 
 set env(TMUX_TMPDIR) $tmux_tmpdir
 set env(TERM) "xterm-256color"
@@ -16,15 +17,9 @@ set timeout 20
 spawn -noecho $binary
 
 after 1500
-send -- "s"
-after 700
-send -- "k"
-after 700
-send -- "j"
-after 300
-send -- "\r"
+send -- $keys
 after 1500
-send -- "tmux display-message -p '#W' > '$result_file'\r"
+send -- "tmux display-message -p '#P' > '$result_file'\r"
 
 for {set attempt 0} {$attempt < 100} {incr attempt} {
     if {[file exists $result_file]} {

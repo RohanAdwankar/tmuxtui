@@ -1066,9 +1066,19 @@ impl App {
                 .sessions
                 .get(*session_idx)
                 .and_then(|session| session.windows.get(*window_idx))
-                .map(|window| TargetKind::Window {
-                    session_id: self.snapshot.sessions[*session_idx].id.clone(),
-                    window_id: window.id.clone(),
+                .and_then(|window| {
+                    if window.panes.len() > 1 {
+                        window.panes.first().map(|pane| TargetKind::Pane {
+                            session_id: self.snapshot.sessions[*session_idx].id.clone(),
+                            window_id: window.id.clone(),
+                            pane_id: pane.id.clone(),
+                        })
+                    } else {
+                        Some(TargetKind::Window {
+                            session_id: self.snapshot.sessions[*session_idx].id.clone(),
+                            window_id: window.id.clone(),
+                        })
+                    }
                 }),
             Selection::Pane(session_idx, window_idx, pane_idx) => self
                 .snapshot
@@ -1775,6 +1785,52 @@ mod tests {
         };
 
         assert_eq!(app.selection_for_session("$2"), Some(Selection::Session(1)));
+    }
+
+    #[test]
+    fn split_window_row_attaches_to_first_pane() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@1"),
+                    name: String::from("editor"),
+                    active: true,
+                    session_id: String::from("$1"),
+                    panes: vec![
+                        Pane {
+                            id: String::from("%1"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: false,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                        Pane {
+                            id: String::from("%2"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                    ],
+                }],
+            }],
+        };
+        app.selection = Some(Selection::Window(0, 0));
+
+        assert!(matches!(
+            app.selected_target(),
+            Some(crate::tmux::TargetKind::Pane {
+                session_id,
+                window_id,
+                pane_id
+            }) if session_id == "$1" && window_id == "@1" && pane_id == "%1"
+        ));
     }
 
     fn test_app() -> App {
