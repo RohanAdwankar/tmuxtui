@@ -149,7 +149,7 @@ fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     }
     if let Some(message) = command_message(state) {
         if state.show_hints && !state.footer.is_empty() {
-            spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
+            spans.push(Span::raw(" "));
         }
         spans.push(Span::raw(message));
     }
