@@ -7,7 +7,7 @@ authors = ["Rohan Adwankar <rohan.adwankar@gmail.com>"]
 description = "tmuxtui"
 repository = "https://github.com/RohanAdwankar/tmuxtui"
 license = "MIT"
-keywords = ["tmuxtui", "devtool"]
+keywords = ["tmux", "tui", "ratatui", "terminal", "devtool"]
 [dependencies]
 anyhow = "1.0.100"
 crossterm = "0.29.0"
