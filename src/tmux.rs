@@ -165,7 +165,7 @@ impl Tmux {
     pub fn new_window(
         &self,
         session_id: &str,
-        base_window_id: Option<&str>,
+        start_path: Option<&str>,
         name: &str,
     ) -> Result<String> {
         let mut args = vec![
@@ -178,11 +178,7 @@ impl Tmux {
             session_id,
         ];
 
-        let start_path = match base_window_id {
-            Some(window_id) => Some(self.window_current_path(window_id)?),
-            None => None,
-        };
-        if let Some(path) = start_path.as_deref() {
+        if let Some(path) = start_path {
             args.push("-c");
             args.push(path);
         }
@@ -214,17 +210,6 @@ impl Tmux {
             "-v",
         ])
         .map(|_| ())
-    }
-
-    fn window_current_path(&self, window_id: &str) -> Result<String> {
-        self.run([
-            "display-message",
-            "-p",
-            "-t",
-            window_id,
-            "#{pane_current_path}",
-        ])
-        .map(|output| output.trim().to_owned())
     }
 
     pub fn rename_pane(&self, pane_id: &str, name: &str) -> Result<()> {
