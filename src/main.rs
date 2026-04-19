@@ -20,25 +20,27 @@ fn main() -> Result<()> {
     let tmux = Tmux::new(managed.clone());
     tmux.ensure_ready()?;
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    loop {
+        enable_raw_mode()?;
+        let mut stdout = io::stdout();
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
 
-    let result = run_app(&mut terminal, App::new(tmux.clone()));
+        let result = run_app(&mut terminal, App::new(tmux.clone()));
 
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+        disable_raw_mode()?;
+        execute!(
+            terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        )?;
+        terminal.show_cursor()?;
 
-    match result? {
-        Some(target) => tmux.attach(&target),
-        None => Ok(()),
+        match result? {
+            Some(target) => tmux.attach(&target)?,
+            None => return Ok(()),
+        }
     }
 }
 

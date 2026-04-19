@@ -167,31 +167,19 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let mut spans = Vec::new();
     if !state.status.is_empty() {
-        spans.push(Span::styled(
-            format!(" {} ", state.status),
-            Style::default().fg(Color::Black).bg(Color::Gray),
-        ));
+        spans.push(Span::raw(state.status.to_string()));
         spans.push(Span::raw(" "));
     }
     for action in &state.footer {
         spans.push(Span::styled(
-            format!(" {} ", action.key),
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::White)
-                .add_modifier(Modifier::BOLD),
+            format!("{} ", action.key),
+            Style::default().add_modifier(Modifier::BOLD),
         ));
-        spans.push(Span::raw(format!("{} ", action.label)));
+        spans.push(Span::raw(format!("{}  ", action.label)));
     }
     if let Some(message) = command_message(state) {
         spans.push(Span::styled("│ ", Style::default().fg(Color::DarkGray)));
-        spans.push(Span::styled(
-            message,
-            Style::default()
-                .fg(Color::Black)
-                .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD),
-        ));
+        spans.push(Span::raw(message));
     }
     let paragraph = Paragraph::new(Line::from(spans))
         .block(Block::default().borders(Borders::TOP))
@@ -210,9 +198,9 @@ fn current_input(state: &DrawState<'_>) -> String {
 fn command_message(state: &DrawState<'_>) -> Option<String> {
     match state.mode {
         InputMode::Normal => None,
-        InputMode::Filter => Some(format!(" filter {}", current_input(state))),
+        InputMode::Filter => Some(format!("filter: {}", current_input(state))),
         InputMode::Prompt(kind) => {
-            Some(format!(" {} {}", prompt_label(kind), current_input(state)))
+            Some(format!("{}: {}", prompt_label(kind), current_input(state)))
         }
         InputMode::Confirm(action) => Some(format!(" {}", confirm_label(action))),
     }
