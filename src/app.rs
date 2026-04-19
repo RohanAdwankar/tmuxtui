@@ -5,7 +5,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{Terminal, backend::CrosstermBackend};
 
 use crate::{
-    tmux::{Snapshot, TargetKind, Tmux},
+    tmux::{LastTarget, Snapshot, TargetKind, Tmux},
     ui::{Action, DrawState, draw},
 };
 
@@ -47,6 +47,13 @@ pub enum Selection {
     Session(usize),
     Window(usize, usize),
     Pane(usize, usize, usize),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SelectionKey {
+    session_id: String,
+    window_id: Option<String>,
+    pane_id: Option<String>,
 }
 
 pub struct App {
@@ -379,7 +386,8 @@ impl App {
                 self.input.push(ch);
                 if is_filter {
                     self.filter = self.input.clone();
-                    self.reconcile_selection();
+                    let previous_selection = self.selection_key();
+                    self.reconcile_selection(previous_selection.as_ref());
                 }
                 true
             }
@@ -387,7 +395,8 @@ impl App {
                 self.input.pop();
                 if is_filter {
                     self.filter = self.input.clone();
-                    self.reconcile_selection();
+                    let previous_selection = self.selection_key();
+                    self.reconcile_selection(previous_selection.as_ref());
                 }
                 true
             }
@@ -396,7 +405,8 @@ impl App {
                 self.input.clear();
                 if is_filter {
                     self.filter.clear();
-                    self.reconcile_selection();
+                    let previous_selection = self.selection_key();
+                    self.reconcile_selection(previous_selection.as_ref());
                 }
                 true
             }
@@ -540,9 +550,7 @@ impl App {
 
     fn attach_selected(&mut self) -> Result<()> {
         if let Some(target) = self.selected_target() {
-            if let Some(session_id) = self.selected_session_id() {
-                self.tmux.set_last_session(&session_id)?;
-            }
+            self.tmux.set_last_target(&target)?;
             self.attach_target = Some(target);
             self.should_quit = true;
         }
@@ -591,24 +599,27 @@ impl App {
     }
 
     fn refresh(&mut self) -> Result<()> {
+        let previous_selection = self.selection_key();
         self.snapshot = self.tmux.snapshot()?;
-        self.reconcile_selection();
+        self.reconcile_selection(previous_selection.as_ref());
         self.refresh_preview()?;
         self.last_refresh = Instant::now();
         Ok(())
     }
 
-    fn reconcile_selection(&mut self) {
+    fn reconcile_selection(&mut self, previous_selection: Option<&SelectionKey>) {
         let visible = self.visible_rows();
         if visible.is_empty() {
             self.selection = None;
             return;
         }
 
-        if let Some(current) = &self.selection {
-            if visible.iter().any(|item| *item == *current) {
-                return;
-            }
+        if let Some(selection) = previous_selection
+            .and_then(|selection| self.selection_from_key(selection))
+            .filter(|selection| visible.iter().any(|item| item == selection))
+        {
+            self.selection = Some(selection);
+            return;
         }
         self.selection = self
             .preferred_selection()
@@ -692,21 +703,21 @@ impl App {
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
+        if let Some(selection) = self
+            .tmux
+            .last_target()
+            .and_then(|target| self.selection_from_last_target(&target))
+        {
+            return Some(selection);
+        }
+
         let attached_session_idx = self
             .snapshot
             .sessions
             .iter()
             .position(|session| session.attached);
-        let session_idx = attached_session_idx
-            .or_else(|| {
-                self.tmux.last_session().and_then(|session_id| {
-                    self.snapshot
-                        .sessions
-                        .iter()
-                        .position(|session| session.id == session_id)
-                })
-            })
-            .or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
+        let session_idx =
+            attached_session_idx.or_else(|| (!self.snapshot.sessions.is_empty()).then_some(0))?;
         let session = self.snapshot.sessions.get(session_idx)?;
 
         let window_idx = session
@@ -738,18 +749,76 @@ impl App {
         self.selection_for_ids(session_id, window_id, "")
     }
 
-    fn selected_session_id(&self) -> Option<String> {
+    fn selection_from_last_target(&self, target: &LastTarget) -> Option<Selection> {
+        if let Some(window_id) = target.window_id.as_deref() {
+            return self.selection_for_ids(
+                &target.session_id,
+                window_id,
+                target.pane_id.as_deref().unwrap_or(""),
+            );
+        }
+
+        self.snapshot
+            .sessions
+            .iter()
+            .position(|session| session.id == target.session_id)
+            .map(Selection::Session)
+    }
+
+    fn selection_key(&self) -> Option<SelectionKey> {
         match self.selection.as_ref()? {
-            Selection::Session(session_idx)
-            | Selection::Window(session_idx, _)
-            | Selection::Pane(session_idx, _, _) => self
+            Selection::Session(session_idx) => {
+                self.snapshot
+                    .sessions
+                    .get(*session_idx)
+                    .map(|session| SelectionKey {
+                        session_id: session.id.clone(),
+                        window_id: None,
+                        pane_id: None,
+                    })
+            }
+            Selection::Window(session_idx, window_idx) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
-                .map(|session| session.id.clone()),
+                .and_then(|session| {
+                    session.windows.get(*window_idx).map(|window| SelectionKey {
+                        session_id: session.id.clone(),
+                        window_id: Some(window.id.clone()),
+                        pane_id: None,
+                    })
+                }),
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| {
+                    session.windows.get(*window_idx).and_then(|window| {
+                        window.panes.get(*pane_idx).map(|pane| SelectionKey {
+                            session_id: session.id.clone(),
+                            window_id: Some(window.id.clone()),
+                            pane_id: Some(pane.id.clone()),
+                        })
+                    })
+                }),
         }
     }
 
+    fn selection_from_key(&self, selection: &SelectionKey) -> Option<Selection> {
+        if let Some(window_id) = selection.window_id.as_deref() {
+            return self.selection_for_ids(
+                &selection.session_id,
+                window_id,
+                selection.pane_id.as_deref().unwrap_or(""),
+            );
+        }
+
+        self.snapshot
+            .sessions
+            .iter()
+            .position(|session| session.id == selection.session_id)
+            .map(Selection::Session)
+    }
     fn selection_for_ids(
         &self,
         session_id: &str,
@@ -984,5 +1053,60 @@ fn pane_label(pane: &crate::tmux::Pane) -> String {
         pane.id.clone()
     } else {
         pane.title.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{App, Selection};
+    use crate::{
+        managed_config::ManagedConfig,
+        tmux::{Pane, Session, Snapshot, Tmux, Window},
+    };
+
+    #[test]
+    fn reconcile_selection_tracks_window_by_id_when_indices_shift() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", true), ("@2", "beta", false)]);
+        app.selection = Some(Selection::Window(0, 1));
+
+        let previous_selection = app.selection_key();
+        app.snapshot = snapshot_with_windows(&[("@2", "beta", true), ("@3", "gamma", false)]);
+        app.reconcile_selection(previous_selection.as_ref());
+
+        assert_eq!(app.selection, Some(Selection::Window(0, 0)));
+    }
+
+    fn test_app() -> App {
+        let managed = ManagedConfig::bootstrap().expect("config");
+        App::new(Tmux::new(managed))
+    }
+
+    fn snapshot_with_windows(windows: &[(&str, &str, bool)]) -> Snapshot {
+        Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: windows
+                    .iter()
+                    .map(|(id, name, active)| Window {
+                        id: (*id).to_owned(),
+                        name: (*name).to_owned(),
+                        active: *active,
+                        session_id: String::from("$1"),
+                        panes: vec![Pane {
+                            id: format!("%{id}"),
+                            title: String::from("shell"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: (*id).to_owned(),
+                        }],
+                    })
+                    .collect(),
+            }],
+        }
     }
 }

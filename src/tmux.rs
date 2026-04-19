@@ -59,6 +59,13 @@ pub enum TargetKind {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastTarget {
+    pub session_id: String,
+    pub window_id: Option<String>,
+    pub pane_id: Option<String>,
+}
+
 impl Tmux {
     pub fn new(managed: ManagedConfig) -> Self {
         Self { managed }
@@ -267,16 +274,33 @@ impl Tmux {
         Ok(())
     }
 
-    pub fn set_last_session(&self, session_id: &str) -> Result<()> {
-        self.run(["set-option", "-gq", "@tmuxtui-session", session_id])
-            .map(|_| ())
+    pub fn set_last_target(&self, target: &TargetKind) -> Result<()> {
+        let (session_id, window_id, pane_id) = match target {
+            TargetKind::Session(session_id) => (session_id.as_str(), "", ""),
+            TargetKind::Window {
+                session_id,
+                window_id,
+            } => (session_id.as_str(), window_id.as_str(), ""),
+            TargetKind::Pane {
+                session_id,
+                window_id,
+                pane_id,
+            } => (session_id.as_str(), window_id.as_str(), pane_id.as_str()),
+        };
+
+        self.run(["set-option", "-gq", "@tmuxtui-session", session_id])?;
+        self.run(["set-option", "-gq", "@tmuxtui-window", window_id])?;
+        self.run(["set-option", "-gq", "@tmuxtui-pane", pane_id])?;
+        Ok(())
     }
 
-    pub fn last_session(&self) -> Option<String> {
-        self.run(["show-options", "-gqv", "@tmuxtui-session"])
-            .ok()
-            .map(|output| output.trim().to_owned())
-            .filter(|session_id| !session_id.is_empty())
+    pub fn last_target(&self) -> Option<LastTarget> {
+        let session_id = self.option_value("@tmuxtui-session")?;
+        Some(LastTarget {
+            window_id: self.option_value("@tmuxtui-window"),
+            pane_id: self.option_value("@tmuxtui-pane"),
+            session_id,
+        })
     }
 
     fn exec_attach<const N: usize>(&self, args: [&str; N]) -> Result<()> {
@@ -293,6 +317,13 @@ impl Tmux {
 
     fn run<const N: usize>(&self, args: [&str; N]) -> Result<String> {
         run_command("tmux", args)
+    }
+
+    fn option_value(&self, option: &str) -> Option<String> {
+        self.run(["show-options", "-gqv", option])
+            .ok()
+            .map(|output| output.trim().to_owned())
+            .filter(|value| !value.is_empty())
     }
 
     fn reload_config(&self) -> Result<()> {
