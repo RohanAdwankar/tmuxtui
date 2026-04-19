@@ -248,6 +248,14 @@ impl App {
                 self.clear_count();
                 self.start_create_prompt();
             }
+            KeyCode::Char('o') => {
+                self.clear_count();
+                self.start_new_window_prompt();
+            }
+            KeyCode::Char('O') => {
+                self.clear_count();
+                self.start_create_prompt();
+            }
             KeyCode::Char('r') => {
                 self.clear_count();
                 self.start_rename_prompt();
@@ -788,6 +796,8 @@ impl App {
             Action::new("j/k", "move"),
             Action::new("/", "filter"),
             Action::new("n", "new session"),
+            Action::new("o", "new window"),
+            Action::new("O", "new session"),
             Action::new("w", "new window"),
             Action::new("r", "rename"),
             Action::new("x", "kill"),
