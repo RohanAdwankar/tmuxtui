@@ -63,6 +63,7 @@ pub struct App {
     should_quit: bool,
     attach_target: Option<TargetKind>,
     count_prefix: Option<usize>,
+    pending_g: bool,
 }
 
 impl App {
@@ -83,6 +84,7 @@ impl App {
             should_quit: false,
             attach_target: None,
             count_prefix: None,
+            pending_g: false,
         }
     }
 
@@ -168,6 +170,18 @@ impl App {
     }
 
     fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
+        if self.pending_g {
+            self.pending_g = false;
+            match key.code {
+                KeyCode::Char('g') => {
+                    self.jump_to_index(0);
+                    self.clear_count();
+                    return Ok(());
+                }
+                _ => self.clear_count(),
+            }
+        }
+
         if let KeyCode::Char(ch) = key.code {
             if let Some(digit) = ch.to_digit(10) {
                 if digit > 0 || self.count_prefix.is_some() {
@@ -193,6 +207,13 @@ impl App {
             KeyCode::Char('h') | KeyCode::Left => {
                 self.clear_count();
                 self.focus = Focus::Tree;
+            }
+            KeyCode::Char('g') => {
+                self.pending_g = true;
+            }
+            KeyCode::Char('G') if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let target = self.take_count().saturating_sub(1);
+                self.jump_to_index(target);
             }
             KeyCode::Char('l') | KeyCode::Right => {
                 self.clear_count();
@@ -244,7 +265,10 @@ impl App {
                 self.clear_count();
                 self.refresh()?;
             }
-            _ => self.clear_count(),
+            _ => {
+                self.pending_g = false;
+                self.clear_count();
+            }
         }
         Ok(())
     }
@@ -559,6 +583,17 @@ impl App {
             (current + delta as usize).min(visible.len().saturating_sub(1))
         };
         self.selection = Some(visible[next].clone());
+    }
+
+    fn jump_to_index(&mut self, target: usize) {
+        let visible = self.visible_rows();
+        if visible.is_empty() {
+            self.selection = None;
+            return;
+        }
+
+        let index = target.min(visible.len().saturating_sub(1));
+        self.selection = Some(visible[index].clone());
     }
 
     pub(crate) fn visible_rows(&self) -> Vec<Selection> {
