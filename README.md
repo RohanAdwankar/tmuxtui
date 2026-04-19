@@ -1,8 +1,14 @@
 # tmux-tui
 
-`tmux-tui` is a minimal tmux control surface for people who want tmux to feel closer to vim and closer to a single-screen tool.
+https://github.com/user-attachments/assets/301d441f-d26a-40b3-9750-8c105c280dc2
 
-It is built to make the common tmux flows easy without asking you to remember tmux prefix commands 
+`tmux-tui` gives you the key benefits of tmux with a simple UI and intuitive vim motions.
+
+## Install
+
+```
+cargo install tmuxtui
+```
 
 ## Commands
 
@@ -12,9 +18,6 @@ It is built to make the common tmux flows easy without asking you to remember tm
 | --- | --- |
 | `j` / `Down` | move down |
 | `k` / `Up` | move up |
-| `h` / `Left` | focus the tree |
-| `l` / `Right` | focus the preview |
-| `Tab` | toggle focus between tree and preview |
 | `gg` | jump to the first visible item |
 | `G` | jump to the last visible item |
 | `count` + `j` / `k` | move by a vim-style count, for example `5j` |
