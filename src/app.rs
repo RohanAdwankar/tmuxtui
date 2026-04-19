@@ -515,6 +515,9 @@ impl App {
 
     fn execute_command(&mut self, command: &str) -> Result<()> {
         match command {
+            "q" => {
+                self.should_quit = true;
+            }
             "hidehints" => {
                 self.tmux.set_show_hints(false)?;
                 self.status = String::from("hints hidden");
