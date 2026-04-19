@@ -2,31 +2,7 @@
 
 `tmux-tui` is a minimal tmux control surface for people who want tmux to feel closer to vim and closer to a single-screen tool.
 
-It is built to make the common tmux flows easy without asking you to remember tmux prefix commands or maintain a separate pile of nvim-focused tmux tweaks.
-
-## What The UI Shows
-
-The left tree shows:
-
-- sessions
-- windows inside each session
-- panes inside each window
-
-The tree uses color to show state:
-
-| Color Or Marker | Meaning |
-| --- | --- |
-| dark gray | default tree row |
-| white | tmux-active row among sibling rows where active state matters |
-| green highlight | the row currently selected in the TUI |
-| pane `z` | the pane is zoomed |
-
-Active-state color is only shown when there are sibling rows to disambiguate. For example, a lone pane in a window does not get a separate active marker.
-
-The preview pane on the right shows:
-
-- a status bar with the current session, window, command, and path
-- a live capture of the selected pane
+It is built to make the common tmux flows easy without asking you to remember tmux prefix commands 
 
 ## Commands
 
@@ -49,11 +25,12 @@ The preview pane on the right shows:
 | Keys | Action |
 | --- | --- |
 | `Enter` | attach to the selected session, window, or pane |
-| `n` | create a new session |
-| `w` | create a new window in the selected session |
+| `n` / `O` | create a new session |
+| `w` / `o` | create a new window in the selected session |
 | `r` | rename the selected session, window, or pane |
 | `d` | kill the selected session, window, or pane |
-| `s` | split the selected pane |
+| `s` | split the selected pane into top and bottom panes |
+| `S` | split the selected pane into left and right panes |
 | `z` | toggle zoom on the selected pane |
 | `R` | refresh tmux state |
 | `q` | quit `tmux-tui` |
@@ -77,7 +54,6 @@ The preview pane on the right shows:
 | `:showhints` | show footer hints again |
 | `:hidestatus` | hide tmux's in-session status line |
 | `:showstatus` | show tmux's in-session status line |
-| `:showstus` | alias for `:showstatus` |
 
 ## Naming Behavior
 
@@ -85,6 +61,7 @@ The preview pane on the right shows:
 | --- | --- |
 | new session with blank name | tmux auto-generates the session name |
 | new window with blank name | tmux creates it unnamed and automatic rename uses the first real command |
+| pane labels | panes are shown as `1`, `2`, and so on within each window |
 | rename window to blank | the window falls back to the active pane command when possible |
 
 ## Defaults

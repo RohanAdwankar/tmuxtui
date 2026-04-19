@@ -205,14 +205,14 @@ impl Tmux {
         self.run(["kill-window", "-t", window_id]).map(|_| ())
     }
 
-    pub fn split_pane(&self, pane_id: &str) -> Result<()> {
+    pub fn split_pane(&self, pane_id: &str, vertical: bool) -> Result<()> {
         self.run([
             "split-window",
             "-t",
             pane_id,
             "-c",
             "#{pane_current_path}",
-            "-v",
+            if vertical { "-h" } else { "-v" },
         ])
         .map(|_| ())
     }

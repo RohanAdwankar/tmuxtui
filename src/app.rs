@@ -273,7 +273,11 @@ impl App {
             }
             KeyCode::Char('s') => {
                 self.clear_count();
-                self.split_selected()?;
+                self.split_selected(false)?;
+            }
+            KeyCode::Char('S') => {
+                self.clear_count();
+                self.split_selected(true)?;
             }
             KeyCode::Char('z') => {
                 self.clear_count();
@@ -497,7 +501,7 @@ impl App {
                 .and_then(|session| session.windows.get(window_idx))
                 .and_then(|window| window.panes.get(pane_idx))
                 .map(|pane| {
-                    self.input = pane_label(pane);
+                    self.input = pane_label(pane_idx);
                     InputMode::Prompt(PromptKind::RenamePane {
                         pane_id: pane.id.clone(),
                     })
@@ -541,7 +545,7 @@ impl App {
                 .map(|pane| {
                     InputMode::Confirm(ConfirmAction::KillPane {
                         pane_id: pane.id.clone(),
-                        name: pane_label(pane),
+                        name: pane_label(pane_idx),
                     })
                 })
                 .unwrap_or(InputMode::Normal),
@@ -549,9 +553,9 @@ impl App {
         };
     }
 
-    fn split_selected(&mut self) -> Result<()> {
+    fn split_selected(&mut self, vertical: bool) -> Result<()> {
         if let Some(pane_id) = self.selected_pane_id() {
-            self.tmux.split_pane(&pane_id)?;
+            self.tmux.split_pane(&pane_id, vertical)?;
             self.refresh()?;
         }
         Ok(())
@@ -737,7 +741,7 @@ impl App {
 
                 let show_panes = self.should_show_panes(session, window);
                 for (pane_idx, pane) in window.panes.iter().enumerate() {
-                    let pane_match = self.matches_filter(&pane_label(pane), &needle)
+                    let pane_match = self.matches_filter(&pane_label(pane_idx), &needle)
                         || self.matches_filter(&pane.current_command, &needle)
                         || self.matches_filter(&pane.current_path, &needle);
                     if show_panes && (session_match || window_match || pane_match) {
@@ -1144,7 +1148,7 @@ impl App {
             Action::new("w", "new window"),
             Action::new("r", "rename"),
             Action::new("d", "kill"),
-            Action::new("s", "split"),
+            Action::new("s/S", "split"),
             Action::new("z", "zoom"),
             Action::new("tab", "focus"),
             Action::new("^q", "leave tmux"),
@@ -1234,17 +1238,13 @@ impl App {
     }
 }
 
-fn pane_label(pane: &crate::tmux::Pane) -> String {
-    if pane.title.trim().is_empty() {
-        pane.id.clone()
-    } else {
-        pane.title.clone()
-    }
+fn pane_label(pane_idx: usize) -> String {
+    (pane_idx + 1).to_string()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{App, InputMode, PromptKind, Selection};
+    use super::{App, InputMode, PromptKind, Selection, pane_label};
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -1511,6 +1511,12 @@ mod tests {
                 session_id: String::from("$1"),
             })
         );
+    }
+
+    #[test]
+    fn pane_label_uses_window_local_numbers() {
+        assert_eq!(pane_label(0), "1");
+        assert_eq!(pane_label(1), "2");
     }
 
     #[test]

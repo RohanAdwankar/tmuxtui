@@ -6,10 +6,7 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::{
-    app::{App, ConfirmAction, InputMode, Selection},
-    tmux::Pane,
-};
+use crate::app::{App, ConfirmAction, InputMode, Selection};
 
 pub struct Action<'a> {
     key: &'a str,
@@ -70,7 +67,7 @@ impl<'a> DrawState<'a> {
                         .len()
                         > 1;
                     tree_lines.push(styled_line(
-                        format!("    {}{}", pane_tree_label(pane), zoom),
+                        format!("    {}{}", pane_tree_label(pane_idx), zoom),
                         app.selection.as_ref() == Some(&selection),
                         pane.active && multi_pane,
                         false,
@@ -209,20 +206,18 @@ fn confirm_label(action: &ConfirmAction) -> String {
     }
 }
 
-fn pane_name(pane: &Pane) -> &str {
-    if pane.title.trim().is_empty() {
-        &pane.id
-    } else {
-        &pane.title
-    }
+fn pane_tree_label(pane_idx: usize) -> String {
+    (pane_idx + 1).to_string()
 }
 
-fn pane_tree_label(pane: &Pane) -> String {
-    let name = pane_name(pane);
-    if pane.title.trim().is_empty() || name == pane.current_command {
-        pane.current_command.clone()
-    } else {
-        name.to_owned()
+#[cfg(test)]
+mod tests {
+    use super::pane_tree_label;
+
+    #[test]
+    fn pane_tree_label_uses_window_local_numbers() {
+        assert_eq!(pane_tree_label(0), "1");
+        assert_eq!(pane_tree_label(1), "2");
     }
 }
 
