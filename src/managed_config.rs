@@ -176,7 +176,7 @@ set -ga update-environment "NVIM"
 bind -n C-j if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-j' 'select-pane -D'
 bind -n C-k if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-k' 'select-pane -U'
 bind -n C-l if-shell 'tmux display-message -p "#{m:#{pane_current_command},*vim}" | grep -q 1' 'send-keys C-l' 'select-pane -R'
-bind -n C-q detach-client
+bind -n C-q set-option -gq @tmuxtui-session "#{session_id}" \; set-option -gq @tmuxtui-window "#{window_id}" \; set-option -gq @tmuxtui-pane "#{pane_id}" \; detach-client
 "##,
     );
     tmux_conf
@@ -212,5 +212,15 @@ mod tests {
         assert!(tmux_conf.contains("set -g status on"));
         assert!(tmux_conf.contains("status-left"));
         assert!(tmux_conf.contains("status-right"));
+    }
+
+    #[test]
+    fn renders_detach_binding_that_persists_live_target() {
+        let tmux_conf = render_tmux_conf(&Settings::default());
+
+        assert!(tmux_conf.contains("@tmuxtui-session"));
+        assert!(tmux_conf.contains("@tmuxtui-window"));
+        assert!(tmux_conf.contains("@tmuxtui-pane"));
+        assert!(tmux_conf.contains("detach-client"));
     }
 }
