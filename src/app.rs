@@ -211,9 +211,15 @@ impl App {
             KeyCode::Char('g') => {
                 self.pending_g = true;
             }
-            KeyCode::Char('G') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                let target = self.take_count().saturating_sub(1);
-                self.jump_to_index(target);
+            KeyCode::Char('G') => {
+                if self.count_prefix.is_some() {
+                    let target = self.take_count().saturating_sub(1);
+                    self.jump_to_index(target);
+                } else {
+                    let last = self.visible_rows().len().saturating_sub(1);
+                    self.clear_count();
+                    self.jump_to_index(last);
+                }
             }
             KeyCode::Char('l') | KeyCode::Right => {
                 self.clear_count();
