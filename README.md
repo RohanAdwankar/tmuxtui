@@ -4,6 +4,8 @@ https://github.com/user-attachments/assets/301d441f-d26a-40b3-9750-8c105c280dc2
 
 `tmux-tui` gives you the key benefits of tmux with a simple UI and intuitive vim motions.
 
+as of 0.2.1 pbcopy is added to the tmux config so only macs can use the copying unless you alias xclip on linux 
+
 ## Install
 
 ```
