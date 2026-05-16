@@ -667,6 +667,10 @@ impl App {
                     self.status = String::from("pin requires pane selection");
                 }
             }
+            "unpin" => {
+                self.tmux.set_pinned_pane(None)?;
+                self.status = String::from("pane unpinned");
+            }
             "hidehints" => {
                 self.tmux.set_show_hints(false)?;
                 self.status = String::from("hints hidden");

@@ -58,6 +58,7 @@ cargo install tmuxtui
 | Command | Action |
 | --- | --- |
 | `:pin` | pin the selected pane so future attaches join it on the right |
+| `:unpin` | clear the pinned pane |
 | `:hidehints` | hide footer hints and keep the bottom bar command-oriented |
 | `:showhints` | show footer hints again |
 | `:hidestatus` | hide tmux's in-session status line |
