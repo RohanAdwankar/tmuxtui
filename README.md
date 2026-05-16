@@ -45,7 +45,8 @@ cargo install tmuxtui
 
 | Keys | Action |
 | --- | --- |
-| `/` | start filtering the visible tree |
+| `/` | jump to the next visible row that starts with a typed character |
+| `f` | start filtering the visible tree |
 | `:` | open the command line |
 | `Enter` | confirm the current filter, prompt, or command |
 | `Esc` | cancel the current filter, prompt, or command |

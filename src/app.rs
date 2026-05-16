@@ -22,6 +22,7 @@ pub enum InputMode {
     Normal,
     Command,
     Filter,
+    Jump,
     Prompt(PromptKind),
     Confirm(ConfirmAction),
 }
@@ -132,6 +133,7 @@ impl App {
             InputMode::Normal => self.handle_normal(key),
             InputMode::Command => self.handle_command(key),
             InputMode::Filter => self.handle_filter(key),
+            InputMode::Jump => self.handle_jump(key),
             InputMode::Prompt(kind) => self.handle_prompt(key, kind),
             InputMode::Confirm(action) => self.handle_confirm(key, action),
         };
@@ -153,6 +155,25 @@ impl App {
                     self.refresh_preview()?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    fn handle_jump(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+            }
+            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.input.clear();
+                self.input.push(ch);
+                self.jump_to_char(ch);
+                self.mode = InputMode::Normal;
+                self.input.clear();
+                self.refresh_preview()?;
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -246,6 +267,11 @@ impl App {
                 self.attach_selected()?;
             }
             KeyCode::Char('/') => {
+                self.clear_count();
+                self.mode = InputMode::Jump;
+                self.input.clear();
+            }
+            KeyCode::Char('f') => {
                 self.clear_count();
                 self.mode = InputMode::Filter;
                 self.input = self.filter.clone();
@@ -723,6 +749,34 @@ impl App {
         self.selection = Some(visible[index].clone());
     }
 
+    fn jump_to_char(&mut self, ch: char) {
+        let visible = self.visible_rows();
+        if visible.is_empty() {
+            self.selection = None;
+            return;
+        }
+
+        let needle = ch.to_lowercase().to_string();
+        let start = self
+            .selection
+            .as_ref()
+            .and_then(|selection| visible.iter().position(|item| item == selection))
+            .map(|index| index + 1)
+            .unwrap_or(0);
+
+        for offset in 0..visible.len() {
+            let index = (start + offset) % visible.len();
+            if self
+                .row_jump_label(&visible[index])
+                .to_lowercase()
+                .starts_with(&needle)
+            {
+                self.selection = Some(visible[index].clone());
+                return;
+            }
+        }
+    }
+
     pub(crate) fn visible_rows(&self) -> Vec<Selection> {
         let needle = self.filter.to_lowercase();
         let mut rows = Vec::new();
@@ -755,6 +809,25 @@ impl App {
 
     fn matches_filter(&self, haystack: &str, needle: &str) -> bool {
         needle.is_empty() || haystack.to_lowercase().contains(needle)
+    }
+
+    fn row_jump_label(&self, selection: &Selection) -> String {
+        match selection {
+            Selection::Session(session_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| session.name.clone())
+                .unwrap_or_default(),
+            Selection::Window(session_idx, window_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .map(window_tree_label)
+                .unwrap_or_default(),
+            Selection::Pane(_, _, pane_idx) => pane_label(*pane_idx),
+        }
     }
 
     fn preferred_selection(&self) -> Option<Selection> {
@@ -1173,7 +1246,8 @@ impl App {
             Action::new("enter", "attach"),
             Action::new(":", "command"),
             Action::new("j/k", "move"),
-            Action::new("/", "filter"),
+            Action::new("/", "jump"),
+            Action::new("f", "filter"),
             Action::new("n", "new session"),
             Action::new("o", "new window"),
             Action::new("O", "new session"),
@@ -1289,6 +1363,7 @@ mod tests {
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
     };
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn reconcile_selection_tracks_window_by_id_when_indices_shift() {
@@ -1593,6 +1668,94 @@ mod tests {
                 Selection::Pane(0, 0, 1)
             ]
         );
+    }
+
+    #[test]
+    fn slash_enters_jump_mode() {
+        let mut app = test_app();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+        assert_eq!(app.mode, InputMode::Jump);
+    }
+
+    #[test]
+    fn slash_jump_selects_next_matching_visible_row() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![
+                Session {
+                    id: String::from("$1"),
+                    name: String::from("dev"),
+                    attached: false,
+                    windows: vec![
+                        Window {
+                            id: String::from("@1"),
+                            name: String::from("editor"),
+                            active: true,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%1"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            }],
+                        },
+                        Window {
+                            id: String::from("@2"),
+                            name: String::from("files"),
+                            active: false,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%2"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@2"),
+                            }],
+                        },
+                    ],
+                },
+                Session {
+                    id: String::from("$2"),
+                    name: String::from("focus"),
+                    attached: false,
+                    windows: vec![Window {
+                        id: String::from("@3"),
+                        name: String::from("main"),
+                        active: true,
+                        session_id: String::from("$2"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@3"),
+                        }],
+                    }],
+                },
+            ],
+        };
+        app.selection = Some(Selection::Session(0));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+
+        assert_eq!(app.selection, Some(Selection::Window(0, 1)));
+        assert_eq!(app.mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn f_enters_filter_mode() {
+        let mut app = test_app();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+
+        assert_eq!(app.mode, InputMode::Filter);
     }
 
     #[test]
