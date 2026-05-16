@@ -204,6 +204,12 @@ impl Tmux {
         self.run(["kill-window", "-t", window_id]).map(|_| ())
     }
 
+    pub fn move_window_to_session(&self, window_id: &str, session_id: &str) -> Result<()> {
+        let target = format!("{session_id}:");
+        self.run(["move-window", "-s", window_id, "-t", &target])
+            .map(|_| ())
+    }
+
     pub fn split_pane(&self, pane_id: &str, vertical: bool) -> Result<()> {
         self.run([
             "split-window",
@@ -245,6 +251,11 @@ impl Tmux {
 
     pub fn kill_pane(&self, pane_id: &str) -> Result<()> {
         self.run(["kill-pane", "-t", pane_id]).map(|_| ())
+    }
+
+    pub fn move_pane_to_window(&self, pane_id: &str, target_pane_id: &str) -> Result<()> {
+        self.run(["join-pane", "-h", "-f", "-s", pane_id, "-t", target_pane_id])
+            .map(|_| ())
     }
 
     pub fn toggle_zoom(&self, pane_id: &str) -> Result<()> {
@@ -402,15 +413,7 @@ impl Tmux {
             return Ok(());
         }
 
-        self.run([
-            "join-pane",
-            "-h",
-            "-f",
-            "-s",
-            &pinned_pane_id,
-            "-t",
-            &target_pane_id,
-        ])?;
+        self.move_pane_to_window(&pinned_pane_id, &target_pane_id)?;
         Ok(())
     }
 

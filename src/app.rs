@@ -64,6 +64,20 @@ enum CreateIntent {
     NewPane,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CutTarget {
+    Window {
+        session_id: String,
+        window_id: String,
+        name: String,
+    },
+    Pane {
+        window_id: String,
+        pane_id: String,
+        name: String,
+    },
+}
+
 pub struct App {
     tmux: Tmux,
     pub(crate) snapshot: Snapshot,
@@ -78,6 +92,7 @@ pub struct App {
     last_refresh: Instant,
     should_quit: bool,
     attach_target: Option<TargetKind>,
+    cut_target: Option<CutTarget>,
     count_prefix: Option<usize>,
     pending_g: bool,
 }
@@ -100,6 +115,7 @@ impl App {
             last_refresh: Instant::now() - TICK_RATE,
             should_quit: false,
             attach_target: None,
+            cut_target: None,
             count_prefix: None,
             pending_g: false,
         }
@@ -267,6 +283,14 @@ impl App {
             KeyCode::Char('d') => {
                 self.clear_count();
                 self.start_kill_prompt();
+            }
+            KeyCode::Char('x') => {
+                self.clear_count();
+                self.cut_selected();
+            }
+            KeyCode::Char('p') => {
+                self.clear_count();
+                self.paste_cut()?;
             }
             KeyCode::Char('G') => {
                 if self.count_prefix.is_some() {
@@ -638,6 +662,68 @@ impl App {
         if let Some(pane_id) = self.selected_pane_id() {
             self.tmux.toggle_zoom(&pane_id)?;
             self.refresh()?;
+        }
+        Ok(())
+    }
+
+    fn cut_selected(&mut self) {
+        self.cut_target = self.cut_target_for_selection();
+        self.status = match self.cut_target.as_ref() {
+            Some(CutTarget::Window { name, .. }) => format!("cut window {name}"),
+            Some(CutTarget::Pane { name, .. }) => format!("cut pane {name}"),
+            None => String::from("cut requires window or pane selection"),
+        };
+    }
+
+    fn paste_cut(&mut self) -> Result<()> {
+        let Some(cut_target) = self.cut_target.clone() else {
+            self.status = String::from("nothing cut");
+            return Ok(());
+        };
+
+        match cut_target {
+            CutTarget::Window {
+                session_id,
+                window_id,
+                ..
+            } => {
+                let Some(target_session_id) = self.selected_session_id() else {
+                    self.status = String::from("paste requires session selection");
+                    return Ok(());
+                };
+                if target_session_id == session_id {
+                    self.status = String::from("window already in session");
+                    return Ok(());
+                }
+                self.tmux
+                    .move_window_to_session(&window_id, &target_session_id)?;
+                self.cut_target = None;
+                self.refresh()?;
+                self.selection = self.selection_for_window(&target_session_id, &window_id);
+                self.status = String::from("pasted window");
+                self.refresh_preview()?;
+            }
+            CutTarget::Pane {
+                window_id, pane_id, ..
+            } => {
+                let Some((target_session_id, target_window_id, target_pane_id)) =
+                    self.selected_pane_destination()
+                else {
+                    self.status = String::from("paste requires window or pane selection");
+                    return Ok(());
+                };
+                if target_window_id == window_id {
+                    self.status = String::from("pane already in window");
+                    return Ok(());
+                }
+                self.tmux.move_pane_to_window(&pane_id, &target_pane_id)?;
+                self.cut_target = None;
+                self.refresh()?;
+                self.selection =
+                    self.selection_for_ids(&target_session_id, &target_window_id, &pane_id);
+                self.status = String::from("pasted pane");
+                self.refresh_preview()?;
+            }
         }
         Ok(())
     }
@@ -1243,6 +1329,81 @@ impl App {
         }
     }
 
+    fn cut_target_for_selection(&self) -> Option<CutTarget> {
+        match self.selection.as_ref()? {
+            Selection::Session(_) => None,
+            Selection::Window(session_idx, window_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| {
+                    session
+                        .windows
+                        .get(*window_idx)
+                        .map(|window| CutTarget::Window {
+                            session_id: session.id.clone(),
+                            window_id: window.id.clone(),
+                            name: window.name.clone(),
+                        })
+                }),
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| {
+                    window.panes.get(*pane_idx).map(|pane| CutTarget::Pane {
+                        window_id: window.id.clone(),
+                        pane_id: pane.id.clone(),
+                        name: pane_label(*pane_idx),
+                    })
+                }),
+        }
+    }
+
+    fn selected_session_id(&self) -> Option<String> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx)
+            | Selection::Window(session_idx, _)
+            | Selection::Pane(session_idx, _, _) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| session.id.clone()),
+        }
+    }
+
+    fn selected_pane_destination(&self) -> Option<(String, String, String)> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = self.base_window_for_session(session)?;
+                let pane = window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.active)
+                    .or_else(|| window.panes.first())?;
+                Some((session.id.clone(), window.id.clone(), pane.id.clone()))
+            }
+            Selection::Window(session_idx, window_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = session.windows.get(*window_idx)?;
+                let pane = window
+                    .panes
+                    .iter()
+                    .find(|pane| pane.active)
+                    .or_else(|| window.panes.first())?;
+                Some((session.id.clone(), window.id.clone(), pane.id.clone()))
+            }
+            Selection::Pane(session_idx, window_idx, pane_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = session.windows.get(*window_idx)?;
+                let pane = window.panes.get(*pane_idx)?;
+                Some((session.id.clone(), window.id.clone(), pane.id.clone()))
+            }
+        }
+    }
+
     fn last_target_for_selection(&self) -> Option<TargetKind> {
         match self.selection.as_ref()? {
             Selection::Session(session_idx) => {
@@ -1324,6 +1485,7 @@ impl App {
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
             Action::new("o/O", "new child/peer"),
+            Action::new("x/p", "cut/paste"),
             Action::new("r", "rename"),
             Action::new("d", "kill"),
             Action::new("s/S", "split"),
@@ -1430,7 +1592,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, CreateIntent, InputMode, Selection, SelectionKey, pane_label};
+    use super::{App, CreateIntent, CutTarget, InputMode, Selection, SelectionKey, pane_label};
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -2284,6 +2446,74 @@ mod tests {
                 pane_id
             }) if session_id == "$1" && window_id == "@1" && pane_id == "%1"
         ));
+    }
+
+    #[test]
+    fn x_cuts_selected_window() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "editor", true), ("@2", "shell", false)]);
+        app.selection = Some(Selection::Window(0, 1));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+
+        assert_eq!(
+            app.cut_target,
+            Some(CutTarget::Window {
+                session_id: String::from("$1"),
+                window_id: String::from("@2"),
+                name: String::from("shell"),
+            })
+        );
+        assert_eq!(app.status, "cut window shell");
+    }
+
+    #[test]
+    fn x_cuts_selected_pane() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@1"),
+                    name: String::from("editor"),
+                    active: true,
+                    session_id: String::from("$1"),
+                    panes: vec![
+                        Pane {
+                            id: String::from("%1"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: false,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                        Pane {
+                            id: String::from("%2"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                    ],
+                }],
+            }],
+        };
+        app.selection = Some(Selection::Pane(0, 0, 1));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+
+        assert_eq!(
+            app.cut_target,
+            Some(CutTarget::Pane {
+                window_id: String::from("@1"),
+                pane_id: String::from("%2"),
+                name: String::from("2"),
+            })
+        );
+        assert_eq!(app.status, "cut pane 2");
     }
 
     fn test_app() -> App {

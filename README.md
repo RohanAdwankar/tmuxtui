@@ -32,6 +32,8 @@ cargo install tmuxtui
 | `Enter` | attach to the selected session, window, or pane |
 | `o` | create the next smaller item for the current selection |
 | `O` | create a same-level item for the current selection |
+| `x` | cut the selected window or pane |
+| `p` | paste the cut window into the selected session, or pane into the selected window |
 | `r` | rename the selected session, window, or pane |
 | `d` | kill the selected session, window, or pane |
 | `s` | split the selected pane into top and bottom panes |

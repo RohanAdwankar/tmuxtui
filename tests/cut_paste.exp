@@ -1,0 +1,22 @@
+#!/usr/bin/expect -f
+
+if {$argc != 3} {
+    puts stderr "usage: cut_paste.exp <binary> <tmux_tmpdir> <keys>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set keys [lindex $argv 2]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- $keys
+after 700
+send -- "q"
+expect eof
