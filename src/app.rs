@@ -293,7 +293,7 @@ impl App {
             KeyCode::Char('/') => {
                 self.clear_count();
                 self.mode = InputMode::Search;
-                self.input = self.search.clone();
+                self.input.clear();
             }
             KeyCode::Char('f') => {
                 self.clear_count();
@@ -1767,6 +1767,20 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
         assert_eq!(app.mode, InputMode::Search);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn slash_clears_previous_search_input() {
+        let mut app = test_app();
+        app.search = String::from("as");
+        app.input = String::from("stale");
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+
+        assert_eq!(app.mode, InputMode::Search);
+        assert!(app.input.is_empty());
+        assert_eq!(app.search, "as");
     }
 
     #[test]
