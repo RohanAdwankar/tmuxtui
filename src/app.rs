@@ -659,6 +659,14 @@ impl App {
             "q" => {
                 self.should_quit = true;
             }
+            "pin" => {
+                if let Some(pane_id) = self.selected_pane_id() {
+                    self.tmux.set_pinned_pane(Some(&pane_id))?;
+                    self.status = String::from("pane pinned");
+                } else {
+                    self.status = String::from("pin requires pane selection");
+                }
+            }
             "hidehints" => {
                 self.tmux.set_show_hints(false)?;
                 self.status = String::from("hints hidden");

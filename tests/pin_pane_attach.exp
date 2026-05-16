@@ -1,0 +1,49 @@
+#!/usr/bin/expect -f
+
+if {$argc != 4} {
+    puts stderr "usage: pin_pane_attach.exp <binary> <tmux_tmpdir> <result_file> <pinned_pane_file>"
+    exit 2
+}
+
+set binary [lindex $argv 0]
+set tmux_tmpdir [lindex $argv 1]
+set result_file [lindex $argv 2]
+set pinned_pane_file [lindex $argv 3]
+
+set env(TMUX_TMPDIR) $tmux_tmpdir
+set env(TERM) "xterm-256color"
+set timeout 20
+
+spawn -noecho $binary
+
+after 1500
+send -- "j"
+after 300
+send -- ":pin\r"
+after 700
+send -- "q"
+expect eof
+
+set pinned_pane [exec tmux show-options -gqv @tmuxtui-pinned-pane]
+set fp [open $pinned_pane_file w]
+puts -nonewline $fp $pinned_pane
+close $fp
+
+spawn -noecho $binary
+
+after 1500
+send -- "jj"
+after 300
+send -- "\r"
+after 1500
+send -- "tmux list-panes -t beta -F '#{pane_left}:#{pane_top}:#{pane_width}:#{pane_height}' > '$result_file'\r"
+
+for {set attempt 0} {$attempt < 120} {incr attempt} {
+    if {[file exists $result_file]} {
+        exit 0
+    }
+    after 100
+}
+
+puts stderr "timed out waiting for result file"
+exit 1

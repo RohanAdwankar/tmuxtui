@@ -252,6 +252,7 @@ impl Tmux {
     }
 
     pub fn attach(&self, target: &TargetKind) -> Result<()> {
+        self.apply_pinned_pane(target)?;
         match target {
             TargetKind::Session(session_id) => {
                 self.exec_attach(["attach-session", "-t", session_id])
@@ -322,6 +323,20 @@ impl Tmux {
         Ok(())
     }
 
+    pub fn set_pinned_pane(&self, pane_id: Option<&str>) -> Result<()> {
+        self.run([
+            "set-option",
+            "-gq",
+            "@tmuxtui-pinned-pane",
+            pane_id.unwrap_or(""),
+        ])?;
+        Ok(())
+    }
+
+    pub fn pinned_pane(&self) -> Option<String> {
+        self.option_value("@tmuxtui-pinned-pane")
+    }
+
     pub fn last_target(&self) -> Option<LastTarget> {
         let session_id = self.option_value("@tmuxtui-session")?;
         Some(LastTarget {
@@ -364,6 +379,66 @@ impl Tmux {
             self.managed.tmux_conf.to_string_lossy().as_ref(),
         ])?;
         Ok(())
+    }
+
+    fn apply_pinned_pane(&self, target: &TargetKind) -> Result<()> {
+        let Some(pinned_pane_id) = self.pinned_pane() else {
+            return Ok(());
+        };
+
+        let Some((target_window_id, target_pane_id)) = self.pin_destination(target)? else {
+            return Ok(());
+        };
+
+        let pinned_window_id = match self.window_id_for_pane(&pinned_pane_id) {
+            Ok(window_id) => window_id,
+            Err(_) => {
+                self.set_pinned_pane(None)?;
+                return Ok(());
+            }
+        };
+
+        if pinned_window_id == target_window_id {
+            return Ok(());
+        }
+
+        self.run([
+            "join-pane",
+            "-h",
+            "-f",
+            "-s",
+            &pinned_pane_id,
+            "-t",
+            &target_pane_id,
+        ])?;
+        Ok(())
+    }
+
+    fn pin_destination(&self, target: &TargetKind) -> Result<Option<(String, String)>> {
+        match target {
+            TargetKind::Session(session_id) => {
+                let target_pane_id = self.active_pane_for_target(session_id)?;
+                let target_window_id = self.window_id_for_pane(&target_pane_id)?;
+                Ok(Some((target_window_id, target_pane_id)))
+            }
+            TargetKind::Window { window_id, .. } => {
+                let target_pane_id = self.active_pane_for_target(window_id)?;
+                Ok(Some((window_id.clone(), target_pane_id)))
+            }
+            TargetKind::Pane {
+                window_id, pane_id, ..
+            } => Ok(Some((window_id.clone(), pane_id.clone()))),
+        }
+    }
+
+    fn active_pane_for_target(&self, target: &str) -> Result<String> {
+        self.run(["display-message", "-p", "-t", target, "#{pane_id}"])
+            .map(|output| output.trim().to_owned())
+    }
+
+    fn window_id_for_pane(&self, pane_id: &str) -> Result<String> {
+        self.run(["display-message", "-p", "-t", pane_id, "#{window_id}"])
+            .map(|output| output.trim().to_owned())
     }
 
     fn run_or_empty<I, S>(&self, args: I) -> Result<String>
