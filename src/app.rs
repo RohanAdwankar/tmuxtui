@@ -883,11 +883,7 @@ impl App {
                 .get(*session_idx)
                 .and_then(|session| session.windows.get(*window_idx))
                 .and_then(|window| window.panes.get(*pane_idx))
-                .map(|pane| {
-                    self.matches_filter(&pane_label(*pane_idx), needle)
-                        || self.matches_filter(&pane.current_command, needle)
-                        || self.matches_filter(&pane.current_path, needle)
-                })
+                .map(|_| self.matches_filter(&pane_label(*pane_idx), needle))
                 .unwrap_or(false),
         }
     }
@@ -1920,6 +1916,66 @@ mod tests {
 
         app.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
         assert_eq!(app.selection, Some(Selection::Window(0, 0)));
+    }
+
+    #[test]
+    fn search_ignores_pane_command_and_path_text() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![
+                Session {
+                    id: String::from("$1"),
+                    name: String::from("alpha"),
+                    attached: false,
+                    windows: vec![Window {
+                        id: String::from("@1"),
+                        name: String::from("agent"),
+                        active: true,
+                        session_id: String::from("$1"),
+                        panes: vec![
+                            Pane {
+                                id: String::from("%1"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                            Pane {
+                                id: String::from("%2"),
+                                current_command: String::from("node"),
+                                current_path: String::from("/tmp/node"),
+                                active: false,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            },
+                        ],
+                    }],
+                },
+                Session {
+                    id: String::from("$2"),
+                    name: String::from("node"),
+                    attached: false,
+                    windows: vec![Window {
+                        id: String::from("@2"),
+                        name: String::from("main"),
+                        active: true,
+                        session_id: String::from("$2"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@2"),
+                        }],
+                    }],
+                },
+            ],
+        };
+
+        assert!(!app.row_matches_search(&Selection::Pane(0, 0, 1), "n"));
+        assert!(app.row_matches_search(&Selection::Session(1), "n"));
     }
 
     #[test]
