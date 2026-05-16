@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 
 const DEFAULT_SHOW_HINTS: bool = false;
 const DEFAULT_SHOW_STATUS: bool = true;
-const DEFAULT_SIDEBAR_PERCENT: u8 = 24;
+const DEFAULT_SIDEBAR_PERCENT: u8 = 12;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
