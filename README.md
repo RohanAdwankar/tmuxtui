@@ -30,7 +30,7 @@ cargo install tmuxtui
 | Keys | Action |
 | --- | --- |
 | `Enter` | attach to the selected session, window, or pane |
-| `n` / `O` | create a new session |
+| `O` | create a new session |
 | `w` / `o` | create a new window in the selected session |
 | `r` | rename the selected session, window, or pane |
 | `d` | kill the selected session, window, or pane |
@@ -45,7 +45,8 @@ cargo install tmuxtui
 
 | Keys | Action |
 | --- | --- |
-| `/` | jump to the next visible row that starts with a typed character |
+| `/` | start a non-filtering search over visible rows |
+| `n` / `N` | jump to the next or previous search match |
 | `f` | start filtering the visible tree |
 | `:` | open the command line |
 | `Enter` | confirm the current filter, prompt, or command |

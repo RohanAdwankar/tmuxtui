@@ -17,7 +17,7 @@ set timeout 20
 spawn -noecho $binary
 
 after 1500
-send -- "n"
+send -- "O"
 after 300
 send -- $session_name
 after 300

@@ -168,7 +168,7 @@ fn current_input(state: &DrawState<'_>) -> String {
         InputMode::Command => state.input.to_owned(),
         InputMode::Prompt(_) => state.input.to_owned(),
         InputMode::Filter => state.filter.to_owned(),
-        InputMode::Jump => state.input.to_owned(),
+        InputMode::Search => state.input.to_owned(),
         _ => String::new(),
     }
 }
@@ -178,9 +178,9 @@ fn command_message(state: &DrawState<'_>) -> Option<String> {
         InputMode::Normal => None,
         InputMode::Command => Some(format!(":{}", current_input(state))),
         InputMode::Filter if state.show_hints => Some(format!("filter: {}", current_input(state))),
-        InputMode::Filter => Some(format!("/{}", current_input(state))),
-        InputMode::Jump if state.show_hints => Some(format!("jump: {}", current_input(state))),
-        InputMode::Jump => Some(format!("/{}", current_input(state))),
+        InputMode::Filter => Some(format!("f{}", current_input(state))),
+        InputMode::Search if state.show_hints => Some(format!("search: {}", current_input(state))),
+        InputMode::Search => Some(format!("/{}", current_input(state))),
         InputMode::Prompt(kind) => {
             Some(format!("{}: {}", prompt_label(kind), current_input(state)))
         }

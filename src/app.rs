@@ -22,7 +22,7 @@ pub enum InputMode {
     Normal,
     Command,
     Filter,
-    Jump,
+    Search,
     Prompt(PromptKind),
     Confirm(ConfirmAction),
 }
@@ -64,6 +64,7 @@ pub struct App {
     pub(crate) focus: Focus,
     pub(crate) mode: InputMode,
     pub(crate) filter: String,
+    pub(crate) search: String,
     pub(crate) input: String,
     pub(crate) preview: String,
     pub(crate) status: String,
@@ -85,6 +86,7 @@ impl App {
             focus: Focus::Tree,
             mode: InputMode::Normal,
             filter: String::new(),
+            search: String::new(),
             input: String::new(),
             preview: String::new(),
             status: String::new(),
@@ -133,7 +135,7 @@ impl App {
             InputMode::Normal => self.handle_normal(key),
             InputMode::Command => self.handle_command(key),
             InputMode::Filter => self.handle_filter(key),
-            InputMode::Jump => self.handle_jump(key),
+            InputMode::Search => self.handle_search(key),
             InputMode::Prompt(kind) => self.handle_prompt(key, kind),
             InputMode::Confirm(action) => self.handle_confirm(key, action),
         };
@@ -159,21 +161,26 @@ impl App {
         Ok(())
     }
 
-    fn handle_jump(&mut self, key: KeyEvent) -> Result<()> {
+    fn handle_search(&mut self, key: KeyEvent) -> Result<()> {
         match key.code {
-            KeyCode::Esc => {
-                self.mode = InputMode::Normal;
-                self.input.clear();
-            }
-            KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.input.clear();
-                self.input.push(ch);
-                self.jump_to_char(ch);
+            KeyCode::Enter => {
+                self.search = self.input.clone();
+                self.search_match(true, true);
                 self.mode = InputMode::Normal;
                 self.input.clear();
                 self.refresh_preview()?;
             }
-            _ => {}
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+            }
+            _ => {
+                if self.handle_text_input(key, false) {
+                    self.search = self.input.clone();
+                    self.search_match(true, true);
+                    self.refresh_preview()?;
+                }
+            }
         }
         Ok(())
     }
@@ -225,6 +232,16 @@ impl App {
                 self.clear_count();
                 self.should_quit = true;
             }
+            KeyCode::Char('n') => {
+                self.clear_count();
+                self.search_match(true, false);
+                self.refresh_preview()?;
+            }
+            KeyCode::Char('N') => {
+                self.clear_count();
+                self.search_match(false, false);
+                self.refresh_preview()?;
+            }
             KeyCode::Char('j') | KeyCode::Down => {
                 let count = self.take_count() as isize;
                 self.move_selection(count);
@@ -268,8 +285,8 @@ impl App {
             }
             KeyCode::Char('/') => {
                 self.clear_count();
-                self.mode = InputMode::Jump;
-                self.input.clear();
+                self.mode = InputMode::Search;
+                self.input = self.search.clone();
             }
             KeyCode::Char('f') => {
                 self.clear_count();
@@ -280,10 +297,6 @@ impl App {
                 self.clear_count();
                 self.mode = InputMode::Command;
                 self.input.clear();
-            }
-            KeyCode::Char('n') => {
-                self.clear_count();
-                self.start_create_prompt();
             }
             KeyCode::Char('o') => {
                 self.clear_count();
@@ -749,30 +762,34 @@ impl App {
         self.selection = Some(visible[index].clone());
     }
 
-    fn jump_to_char(&mut self, ch: char) {
+    fn search_match(&mut self, forward: bool, include_current: bool) {
+        if self.search.is_empty() {
+            return;
+        }
+
         let visible = self.visible_rows();
         if visible.is_empty() {
             self.selection = None;
             return;
         }
 
-        let needle = ch.to_lowercase().to_string();
-        let start = self
+        let current = self
             .selection
             .as_ref()
             .and_then(|selection| visible.iter().position(|item| item == selection))
-            .map(|index| index + 1)
             .unwrap_or(0);
+        let needle = self.search.to_lowercase();
 
-        for offset in 0..visible.len() {
-            let index = (start + offset) % visible.len();
-            if self
-                .row_jump_label(&visible[index])
-                .to_lowercase()
-                .starts_with(&needle)
-            {
+        let iter = usize::from(!include_current)..=visible.len();
+        for offset in iter {
+            let index = if forward {
+                (current + offset) % visible.len()
+            } else {
+                (current + visible.len() - (offset % visible.len())) % visible.len()
+            };
+            if self.row_matches_search(&visible[index], &needle) {
                 self.selection = Some(visible[index].clone());
-                return;
+                break;
             }
         }
     }
@@ -811,22 +828,33 @@ impl App {
         needle.is_empty() || haystack.to_lowercase().contains(needle)
     }
 
-    fn row_jump_label(&self, selection: &Selection) -> String {
+    fn row_matches_search(&self, selection: &Selection, needle: &str) -> bool {
         match selection {
             Selection::Session(session_idx) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
-                .map(|session| session.name.clone())
-                .unwrap_or_default(),
+                .map(|session| self.matches_filter(&session.name, needle))
+                .unwrap_or(false),
             Selection::Window(session_idx, window_idx) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
                 .and_then(|session| session.windows.get(*window_idx))
-                .map(window_tree_label)
-                .unwrap_or_default(),
-            Selection::Pane(_, _, pane_idx) => pane_label(*pane_idx),
+                .map(|window| self.matches_filter(&window_tree_label(window), needle))
+                .unwrap_or(false),
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| window.panes.get(*pane_idx))
+                .map(|pane| {
+                    self.matches_filter(&pane_label(*pane_idx), needle)
+                        || self.matches_filter(&pane.current_command, needle)
+                        || self.matches_filter(&pane.current_path, needle)
+                })
+                .unwrap_or(false),
         }
     }
 
@@ -1246,9 +1274,9 @@ impl App {
             Action::new("enter", "attach"),
             Action::new(":", "command"),
             Action::new("j/k", "move"),
-            Action::new("/", "jump"),
+            Action::new("/", "search"),
+            Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
-            Action::new("n", "new session"),
             Action::new("o", "new window"),
             Action::new("O", "new session"),
             Action::new("w", "new window"),
@@ -1671,16 +1699,16 @@ mod tests {
     }
 
     #[test]
-    fn slash_enters_jump_mode() {
+    fn slash_enters_search_mode() {
         let mut app = test_app();
 
         app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
 
-        assert_eq!(app.mode, InputMode::Jump);
+        assert_eq!(app.mode, InputMode::Search);
     }
 
     #[test]
-    fn slash_jump_selects_next_matching_visible_row() {
+    fn slash_search_selects_current_matching_visible_row() {
         let mut app = test_app();
         app.snapshot = Snapshot {
             sessions: vec![
@@ -1740,13 +1768,96 @@ mod tests {
                 },
             ],
         };
-        app.selection = Some(Selection::Session(0));
+        app.selection = Some(Selection::Window(0, 1));
 
         app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
         app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
 
         assert_eq!(app.selection, Some(Selection::Window(0, 1)));
+        assert_eq!(app.mode, InputMode::Search);
+    }
+
+    #[test]
+    fn n_and_n_repeat_search_forward_and_backward() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![
+                Session {
+                    id: String::from("$1"),
+                    name: String::from("dev"),
+                    attached: false,
+                    windows: vec![
+                        Window {
+                            id: String::from("@1"),
+                            name: String::from("files"),
+                            active: true,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%1"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@1"),
+                            }],
+                        },
+                        Window {
+                            id: String::from("@2"),
+                            name: String::from("focus"),
+                            active: false,
+                            session_id: String::from("$1"),
+                            panes: vec![Pane {
+                                id: String::from("%2"),
+                                current_command: String::from("zsh"),
+                                current_path: String::from("/tmp"),
+                                active: true,
+                                zoomed: false,
+                                window_id: String::from("@2"),
+                            }],
+                        },
+                    ],
+                },
+                Session {
+                    id: String::from("$2"),
+                    name: String::from("files-2"),
+                    attached: false,
+                    windows: vec![Window {
+                        id: String::from("@3"),
+                        name: String::from("main"),
+                        active: true,
+                        session_id: String::from("$2"),
+                        panes: vec![Pane {
+                            id: String::from("%3"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@3"),
+                        }],
+                    }],
+                },
+            ],
+        };
+        app.selection = Some(Selection::Session(0));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert_eq!(app.selection, Some(Selection::Window(0, 0)));
         assert_eq!(app.mode, InputMode::Normal);
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        assert_eq!(app.selection, Some(Selection::Window(0, 1)));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+        assert_eq!(app.selection, Some(Selection::Session(1)));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+        assert_eq!(app.selection, Some(Selection::Window(0, 1)));
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('N'), KeyModifiers::SHIFT));
+        assert_eq!(app.selection, Some(Selection::Window(0, 0)));
     }
 
     #[test]
