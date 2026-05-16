@@ -862,20 +862,24 @@ impl App {
         needle.is_empty() || haystack.to_lowercase().contains(needle)
     }
 
+    fn matches_search(&self, haystack: &str, needle: &str) -> bool {
+        needle.is_empty() || haystack.to_lowercase().starts_with(needle)
+    }
+
     fn row_matches_search(&self, selection: &Selection, needle: &str) -> bool {
         match selection {
             Selection::Session(session_idx) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
-                .map(|session| self.matches_filter(&session.name, needle))
+                .map(|session| self.matches_search(&session.name, needle))
                 .unwrap_or(false),
             Selection::Window(session_idx, window_idx) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
                 .and_then(|session| session.windows.get(*window_idx))
-                .map(|window| self.matches_filter(&window_tree_label(window), needle))
+                .map(|window| self.matches_search(&window_tree_label(window), needle))
                 .unwrap_or(false),
             Selection::Pane(session_idx, window_idx, pane_idx) => self
                 .snapshot
@@ -883,7 +887,7 @@ impl App {
                 .get(*session_idx)
                 .and_then(|session| session.windows.get(*window_idx))
                 .and_then(|window| window.panes.get(*pane_idx))
-                .map(|_| self.matches_filter(&pane_label(*pane_idx), needle))
+                .map(|_| self.matches_search(&pane_label(*pane_idx), needle))
                 .unwrap_or(false),
         }
     }
@@ -1976,6 +1980,37 @@ mod tests {
 
         assert!(!app.row_matches_search(&Selection::Pane(0, 0, 1), "n"));
         assert!(app.row_matches_search(&Selection::Session(1), "n"));
+    }
+
+    #[test]
+    fn search_matches_prefix_not_substring() {
+        let mut app = test_app();
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("agent"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@1"),
+                    name: String::from("tools"),
+                    active: true,
+                    session_id: String::from("$1"),
+                    panes: vec![Pane {
+                        id: String::from("%1"),
+                        current_command: String::from("zsh"),
+                        current_path: String::from("/tmp"),
+                        active: true,
+                        zoomed: false,
+                        window_id: String::from("@1"),
+                    }],
+                }],
+            }],
+        };
+
+        assert!(!app.row_matches_search(&Selection::Session(0), "t"));
+        assert!(!app.row_matches_search(&Selection::Session(0), "n"));
+        assert!(app.row_matches_search(&Selection::Window(0, 0), "t"));
+        assert!(app.row_matches_search(&Selection::Session(0), "a"));
     }
 
     #[test]
