@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
 
-const DEFAULT_SHOW_HINTS: bool = true;
+const DEFAULT_SHOW_HINTS: bool = false;
 const DEFAULT_SHOW_STATUS: bool = true;
 const DEFAULT_SIDEBAR_PERCENT: u8 = 24;
 
