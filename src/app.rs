@@ -57,6 +57,13 @@ struct SelectionKey {
     pane_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CreateIntent {
+    NewSession,
+    NewWindow { session_id: String },
+    NewPane,
+}
+
 pub struct App {
     tmux: Tmux,
     pub(crate) snapshot: Snapshot,
@@ -300,11 +307,11 @@ impl App {
             }
             KeyCode::Char('o') => {
                 self.clear_count();
-                self.start_new_window_prompt();
+                self.start_child_create()?;
             }
             KeyCode::Char('O') => {
                 self.clear_count();
-                self.start_create_prompt();
+                self.start_peer_create()?;
             }
             KeyCode::Char('r') => {
                 self.clear_count();
@@ -321,10 +328,6 @@ impl App {
             KeyCode::Char('z') => {
                 self.clear_count();
                 self.zoom_selected()?;
-            }
-            KeyCode::Char('w') => {
-                self.clear_count();
-                self.start_new_window_prompt();
             }
             KeyCode::Char('R') if key.modifiers.contains(KeyModifiers::SHIFT) => {
                 self.clear_count();
@@ -473,38 +476,69 @@ impl App {
         };
     }
 
-    fn start_create_prompt(&mut self) {
-        self.input.clear();
-        self.mode = InputMode::Prompt(PromptKind::NewSession);
+    fn start_child_create(&mut self) -> Result<()> {
+        if let Some(intent) = self.child_create_intent() {
+            self.apply_create_intent(intent)?;
+        }
+        Ok(())
     }
 
-    fn start_new_window_prompt(&mut self) {
-        if let Some(selection) = self.selection.clone() {
-            let session_id = match selection {
-                Selection::Session(session_idx) => self
-                    .snapshot
+    fn start_peer_create(&mut self) -> Result<()> {
+        if let Some(intent) = self.peer_create_intent() {
+            self.apply_create_intent(intent)?;
+        }
+        Ok(())
+    }
+
+    fn child_create_intent(&self) -> Option<CreateIntent> {
+        match self.selection.clone()? {
+            Selection::Session(session_idx) => {
+                self.snapshot
                     .sessions
                     .get(session_idx)
-                    .map(|session| session.id.clone()),
-                Selection::Window(session_idx, window_idx) => self
-                    .snapshot
+                    .map(|session| CreateIntent::NewWindow {
+                        session_id: session.id.clone(),
+                    })
+            }
+            Selection::Window(_, _) | Selection::Pane(_, _, _) => {
+                self.selected_pane_id().map(|_| CreateIntent::NewPane)
+            }
+        }
+    }
+
+    fn peer_create_intent(&self) -> Option<CreateIntent> {
+        match self.selection.clone() {
+            None => Some(CreateIntent::NewSession),
+            Some(Selection::Session(_)) => Some(CreateIntent::NewSession),
+            Some(Selection::Window(session_idx, _)) => {
+                self.snapshot
                     .sessions
                     .get(session_idx)
-                    .and_then(|session| session.windows.get(window_idx))
-                    .map(|_| self.snapshot.sessions[session_idx].id.clone()),
-                Selection::Pane(session_idx, window_idx, pane_idx) => self
-                    .snapshot
-                    .sessions
-                    .get(session_idx)
-                    .and_then(|session| session.windows.get(window_idx))
-                    .and_then(|window| window.panes.get(pane_idx))
-                    .map(|_| self.snapshot.sessions[session_idx].id.clone()),
-            };
-            if let Some(session_id) = session_id {
+                    .map(|session| CreateIntent::NewWindow {
+                        session_id: session.id.clone(),
+                    })
+            }
+            Some(Selection::Pane(_, _, _)) => {
+                self.selected_pane_id().map(|_| CreateIntent::NewPane)
+            }
+        }
+    }
+
+    fn apply_create_intent(&mut self, intent: CreateIntent) -> Result<()> {
+        match intent {
+            CreateIntent::NewSession => {
+                self.input.clear();
+                self.mode = InputMode::Prompt(PromptKind::NewSession);
+            }
+            CreateIntent::NewWindow { session_id } => {
                 self.input.clear();
                 self.mode = InputMode::Prompt(PromptKind::NewWindow { session_id });
             }
+            CreateIntent::NewPane => {
+                self.split_selected(false)?;
+            }
         }
+        Ok(())
     }
 
     fn start_rename_prompt(&mut self) {
@@ -1277,9 +1311,7 @@ impl App {
             Action::new("/", "search"),
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
-            Action::new("o", "new window"),
-            Action::new("O", "new session"),
-            Action::new("w", "new window"),
+            Action::new("o/O", "new child/peer"),
             Action::new("r", "rename"),
             Action::new("d", "kill"),
             Action::new("s/S", "split"),
@@ -1386,7 +1418,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, InputMode, PromptKind, Selection, SelectionKey, pane_label};
+    use super::{App, CreateIntent, InputMode, Selection, SelectionKey, pane_label};
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -1632,19 +1664,49 @@ mod tests {
     }
 
     #[test]
-    fn new_window_prompt_uses_active_window_pane_as_base() {
+    fn child_create_on_session_targets_new_window() {
         let mut app = test_app();
         app.snapshot = snapshot_with_windows(&[("@1", "alpha", false), ("@2", "beta", true)]);
         app.selection = Some(Selection::Session(0));
 
-        app.start_new_window_prompt();
-
         assert_eq!(
-            app.mode,
-            InputMode::Prompt(PromptKind::NewWindow {
+            app.child_create_intent(),
+            Some(CreateIntent::NewWindow {
                 session_id: String::from("$1"),
             })
         );
+    }
+
+    #[test]
+    fn peer_create_on_session_targets_new_session() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", true)]);
+        app.selection = Some(Selection::Session(0));
+
+        assert_eq!(app.peer_create_intent(), Some(CreateIntent::NewSession));
+    }
+
+    #[test]
+    fn peer_create_on_window_targets_new_window() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", true)]);
+        app.selection = Some(Selection::Window(0, 0));
+
+        assert_eq!(
+            app.peer_create_intent(),
+            Some(CreateIntent::NewWindow {
+                session_id: String::from("$1"),
+            })
+        );
+    }
+
+    #[test]
+    fn child_create_on_window_targets_new_pane() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "alpha", true)]);
+        app.selection = Some(Selection::Window(0, 0));
+
+        assert_eq!(app.child_create_intent(), Some(CreateIntent::NewPane));
     }
 
     #[test]

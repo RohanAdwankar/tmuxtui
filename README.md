@@ -30,8 +30,8 @@ cargo install tmuxtui
 | Keys | Action |
 | --- | --- |
 | `Enter` | attach to the selected session, window, or pane |
-| `O` | create a new session |
-| `w` / `o` | create a new window in the selected session |
+| `o` | create the next smaller item for the current selection |
+| `O` | create a same-level item for the current selection |
 | `r` | rename the selected session, window, or pane |
 | `d` | kill the selected session, window, or pane |
 | `s` | split the selected pane into top and bottom panes |
