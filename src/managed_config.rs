@@ -155,9 +155,9 @@ set -g status-right "#{pane_current_path} | %H:%M"
     };
 
     let mut tmux_conf = String::from(
-        r##"set -g prefix C-a
+        r##"set -g prefix C-g
 unbind C-b
-bind C-a send-prefix
+bind C-g send-prefix
 
 set -g mouse on
 set -g mode-keys vi
@@ -223,6 +223,15 @@ mod tests {
         assert!(tmux_conf.contains("set -g status on"));
         assert!(tmux_conf.contains("status-left"));
         assert!(tmux_conf.contains("status-right"));
+    }
+
+    #[test]
+    fn renders_prefix_that_leaves_readline_start_key_alone() {
+        let tmux_conf = render_tmux_conf(&Settings::default());
+
+        assert!(tmux_conf.contains("set -g prefix C-g"));
+        assert!(tmux_conf.contains("bind C-g send-prefix"));
+        assert!(!tmux_conf.contains("set -g prefix C-a"));
     }
 
     #[test]

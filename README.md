@@ -96,3 +96,4 @@ The managed tmux config includes:
 | mouse on | standard tmux mouse behavior inside tmux |
 | automatic window rename | unnamed windows pick up the pane command |
 | managed status line | can be toggled with `:showstatus` and `:hidestatus` |
+| `Ctrl-g` prefix | leaves shell `Ctrl-a` free for beginning-of-line editing |
