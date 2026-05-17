@@ -51,8 +51,12 @@ impl<'a> DrawState<'a> {
                 Selection::Window(session_idx, window_idx) => {
                     let window = &app.snapshot.sessions[session_idx].windows[window_idx];
                     let multi_window = app.snapshot.sessions[session_idx].windows.len() > 1;
+                    let pinned = window
+                        .panes
+                        .first()
+                        .is_some_and(|pane| app.pinned_pane.as_deref() == Some(pane.id.as_str()));
                     tree_lines.push(styled_line(
-                        format!("  {}", window_tree_label(window)),
+                        pin_marker(format!("  {}", window_tree_label(window)), pinned),
                         app.selection.as_ref() == Some(&selection),
                         window.active && multi_window,
                         false,
@@ -63,8 +67,9 @@ impl<'a> DrawState<'a> {
                     let pane = &window.panes[pane_idx];
                     let zoom = if pane.zoomed { " z" } else { "" };
                     let multi_pane = window.panes.len() > 1;
+                    let pinned = app.pinned_pane.as_deref() == Some(pane.id.as_str());
                     tree_lines.push(styled_line(
-                        pane_tree_line(window, pane_idx, zoom),
+                        pin_marker(pane_tree_line(window, pane_idx, zoom), pinned),
                         app.selection.as_ref() == Some(&selection),
                         pane.active && multi_pane,
                         false,
@@ -223,6 +228,10 @@ fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &s
     }
 }
 
+fn pin_marker(line: String, pinned: bool) -> String {
+    if pinned { format!("{line} ⌖") } else { line }
+}
+
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
         format!("{} 1", window.name)
@@ -233,7 +242,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{pane_tree_label, pane_tree_line, window_tree_label};
+    use super::{pane_tree_label, pane_tree_line, pin_marker, window_tree_label};
     use crate::tmux::Window;
 
     #[test]
@@ -301,6 +310,12 @@ mod tests {
         };
 
         assert_eq!(window_tree_label(&split_window), "editor 1");
+    }
+
+    #[test]
+    fn pin_marker_marks_pinned_rows_only() {
+        assert_eq!(pin_marker(String::from("  editor 1"), true), "  editor 1 ⌖");
+        assert_eq!(pin_marker(String::from("      2"), false), "      2");
     }
 }
 

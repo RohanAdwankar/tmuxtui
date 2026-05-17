@@ -102,6 +102,7 @@ pub struct App {
     pub(crate) input: String,
     pub(crate) preview: String,
     pub(crate) status: String,
+    pub(crate) pinned_pane: Option<String>,
     last_refresh: Instant,
     should_quit: bool,
     attach_target: Option<TargetKind>,
@@ -125,6 +126,7 @@ impl App {
             input: String::new(),
             preview: String::new(),
             status: String::new(),
+            pinned_pane: None,
             last_refresh: Instant::now() - TICK_RATE,
             should_quit: false,
             attach_target: None,
@@ -802,6 +804,7 @@ impl App {
             "pin" => {
                 if let Some(pane_id) = self.selected_pane_id() {
                     self.tmux.set_pinned_pane(Some(&pane_id))?;
+                    self.pinned_pane = Some(pane_id);
                     self.status = String::from("pane pinned");
                 } else {
                     self.status = String::from("pin requires pane selection");
@@ -809,6 +812,7 @@ impl App {
             }
             "unpin" => {
                 self.tmux.set_pinned_pane(None)?;
+                self.pinned_pane = None;
                 self.status = String::from("pane unpinned");
             }
             "hidehints" => {
@@ -855,6 +859,7 @@ impl App {
                 .position(|item| item == selection)
         });
         self.snapshot = self.tmux.snapshot()?;
+        self.pinned_pane = self.tmux.pinned_pane();
         self.reconcile_selection(previous_selection.as_ref(), previous_index);
         self.refresh_preview()?;
         self.last_refresh = Instant::now();
