@@ -556,7 +556,12 @@ impl Tmux {
                 stop_caffeinate(entry.pid);
             }
         }
-        self.set_caffeinate_entries(&kept)?;
+        if let Err(error) = self.set_caffeinate_entries(&kept) {
+            if is_no_server_error(&error) {
+                return Ok(());
+            }
+            return Err(error);
+        }
         Ok(())
     }
 
