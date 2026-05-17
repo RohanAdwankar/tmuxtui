@@ -210,6 +210,13 @@ impl Tmux {
             .map(|_| ())
     }
 
+    pub fn move_window_to_new_session(&self, window_id: &str) -> Result<String> {
+        let (session_id, dummy_window_id) = self.create_session_with_window("")?;
+        self.move_window_to_session(window_id, &session_id)?;
+        self.kill_window(&dummy_window_id)?;
+        Ok(session_id)
+    }
+
     pub fn split_pane(&self, pane_id: &str, vertical: bool) -> Result<()> {
         self.run([
             "split-window",
@@ -244,6 +251,38 @@ impl Tmux {
         .map(|output| output.trim().to_owned())
     }
 
+    fn create_session_with_window(&self, name: &str) -> Result<(String, String)> {
+        let output = if name.is_empty() {
+            self.run([
+                "new-session",
+                "-P",
+                "-F",
+                "#{session_id}\t#{window_id}",
+                "-d",
+            ])
+        } else {
+            self.run([
+                "new-session",
+                "-P",
+                "-F",
+                "#{session_id}\t#{window_id}",
+                "-d",
+                "-s",
+                name,
+            ])
+        }?;
+        let mut parts = output.trim().split('\t');
+        let session_id = parts
+            .next()
+            .context("missing created session id")?
+            .to_owned();
+        let window_id = parts
+            .next()
+            .context("missing created window id")?
+            .to_owned();
+        Ok((session_id, window_id))
+    }
+
     pub fn rename_pane(&self, pane_id: &str, name: &str) -> Result<()> {
         self.run(["select-pane", "-t", pane_id, "-T", name])
             .map(|_| ())
@@ -256,6 +295,29 @@ impl Tmux {
     pub fn move_pane_to_window(&self, pane_id: &str, target_pane_id: &str) -> Result<()> {
         self.run(["join-pane", "-h", "-f", "-s", pane_id, "-t", target_pane_id])
             .map(|_| ())
+    }
+
+    pub fn move_pane_to_new_window(&self, pane_id: &str, session_id: &str) -> Result<String> {
+        let target = format!("{session_id}:");
+        let output = self.run([
+            "break-pane",
+            "-d",
+            "-P",
+            "-F",
+            "#{window_id}",
+            "-s",
+            pane_id,
+            "-t",
+            &target,
+        ])?;
+        Ok(output.trim().to_owned())
+    }
+
+    pub fn move_pane_to_new_session(&self, pane_id: &str) -> Result<String> {
+        let (session_id, dummy_window_id) = self.create_session_with_window("")?;
+        self.move_pane_to_new_window(pane_id, &session_id)?;
+        self.kill_window(&dummy_window_id)?;
+        Ok(session_id)
     }
 
     pub fn toggle_zoom(&self, pane_id: &str) -> Result<()> {

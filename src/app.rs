@@ -78,6 +78,19 @@ enum CutTarget {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum PasteIntent {
+    Session,
+    Window {
+        session_id: String,
+    },
+    Pane {
+        session_id: String,
+        window_id: String,
+        pane_id: String,
+    },
+}
+
 pub struct App {
     tmux: Tmux,
     pub(crate) snapshot: Snapshot,
@@ -290,7 +303,11 @@ impl App {
             }
             KeyCode::Char('p') => {
                 self.clear_count();
-                self.paste_cut()?;
+                self.paste_cut(false)?;
+            }
+            KeyCode::Char('P') => {
+                self.clear_count();
+                self.paste_cut(true)?;
             }
             KeyCode::Char('G') => {
                 if self.count_prefix.is_some() {
@@ -675,55 +692,92 @@ impl App {
         };
     }
 
-    fn paste_cut(&mut self) -> Result<()> {
+    fn paste_cut(&mut self, peer: bool) -> Result<()> {
         let Some(cut_target) = self.cut_target.clone() else {
             self.status = String::from("nothing cut");
             return Ok(());
         };
+        let Some(intent) = self.paste_intent(peer) else {
+            self.status = String::from("paste requires selection");
+            return Ok(());
+        };
 
-        match cut_target {
-            CutTarget::Window {
-                session_id,
-                window_id,
-                ..
-            } => {
-                let Some(target_session_id) = self.selected_session_id() else {
-                    self.status = String::from("paste requires session selection");
-                    return Ok(());
-                };
-                if target_session_id == session_id {
-                    self.status = String::from("window already in session");
-                    return Ok(());
+        match (cut_target, intent) {
+            (
+                CutTarget::Window {
+                    session_id,
+                    window_id,
+                    ..
+                },
+                intent,
+            ) => match intent {
+                PasteIntent::Session => {
+                    let new_session_id = self.tmux.move_window_to_new_session(&window_id)?;
+                    self.cut_target = None;
+                    self.refresh()?;
+                    self.selection = self.selection_for_session(&new_session_id);
+                    self.status = String::from("pasted session");
+                    self.refresh_preview()?;
                 }
-                self.tmux
-                    .move_window_to_session(&window_id, &target_session_id)?;
-                self.cut_target = None;
-                self.refresh()?;
-                self.selection = self.selection_for_window(&target_session_id, &window_id);
-                self.status = String::from("pasted window");
-                self.refresh_preview()?;
-            }
-            CutTarget::Pane {
-                window_id, pane_id, ..
-            } => {
-                let Some((target_session_id, target_window_id, target_pane_id)) =
-                    self.selected_pane_destination()
-                else {
-                    self.status = String::from("paste requires window or pane selection");
-                    return Ok(());
-                };
-                if target_window_id == window_id {
-                    self.status = String::from("pane already in window");
-                    return Ok(());
+                PasteIntent::Window {
+                    session_id: target_session_id,
+                } => {
+                    if target_session_id == session_id {
+                        self.status = String::from("window already in session");
+                        return Ok(());
+                    }
+                    self.tmux
+                        .move_window_to_session(&window_id, &target_session_id)?;
+                    self.cut_target = None;
+                    self.refresh()?;
+                    self.selection = self.selection_for_window(&target_session_id, &window_id);
+                    self.status = String::from("pasted window");
+                    self.refresh_preview()?;
                 }
-                self.tmux.move_pane_to_window(&pane_id, &target_pane_id)?;
-                self.cut_target = None;
-                self.refresh()?;
-                self.selection =
-                    self.selection_for_ids(&target_session_id, &target_window_id, &pane_id);
-                self.status = String::from("pasted pane");
-                self.refresh_preview()?;
-            }
+                PasteIntent::Pane { .. } => {
+                    self.status = String::from("window can paste as session or window");
+                }
+            },
+            (
+                CutTarget::Pane {
+                    window_id, pane_id, ..
+                },
+                intent,
+            ) => match intent {
+                PasteIntent::Session => {
+                    let session_id = self.tmux.move_pane_to_new_session(&pane_id)?;
+                    self.cut_target = None;
+                    self.refresh()?;
+                    self.selection = self.selection_for_session(&session_id);
+                    self.status = String::from("pasted session");
+                    self.refresh_preview()?;
+                }
+                PasteIntent::Window { session_id } => {
+                    let window_id = self.tmux.move_pane_to_new_window(&pane_id, &session_id)?;
+                    self.cut_target = None;
+                    self.refresh()?;
+                    self.selection = self.selection_for_window(&session_id, &window_id);
+                    self.status = String::from("pasted window");
+                    self.refresh_preview()?;
+                }
+                PasteIntent::Pane {
+                    session_id: target_session_id,
+                    window_id: target_window_id,
+                    pane_id: target_pane_id,
+                } => {
+                    if target_window_id == window_id {
+                        self.status = String::from("pane already in window");
+                        return Ok(());
+                    }
+                    self.tmux.move_pane_to_window(&pane_id, &target_pane_id)?;
+                    self.cut_target = None;
+                    self.refresh()?;
+                    self.selection =
+                        self.selection_for_ids(&target_session_id, &target_window_id, &pane_id);
+                    self.status = String::from("pasted pane");
+                    self.refresh_preview()?;
+                }
+            },
         }
         Ok(())
     }
@@ -1361,15 +1415,38 @@ impl App {
         }
     }
 
-    fn selected_session_id(&self) -> Option<String> {
-        match self.selection.as_ref()? {
-            Selection::Session(session_idx)
-            | Selection::Window(session_idx, _)
-            | Selection::Pane(session_idx, _, _) => self
+    fn paste_intent(&self, peer: bool) -> Option<PasteIntent> {
+        match (peer, self.selection.as_ref()?) {
+            (false, Selection::Session(session_idx)) => self
                 .snapshot
                 .sessions
                 .get(*session_idx)
-                .map(|session| session.id.clone()),
+                .map(|session| PasteIntent::Window {
+                    session_id: session.id.clone(),
+                }),
+            (false, Selection::Window(_, _) | Selection::Pane(_, _, _)) => self
+                .selected_pane_destination()
+                .map(|(session_id, window_id, pane_id)| PasteIntent::Pane {
+                    session_id,
+                    window_id,
+                    pane_id,
+                }),
+            (true, Selection::Session(_)) => Some(PasteIntent::Session),
+            (true, Selection::Window(session_idx, _)) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| PasteIntent::Window {
+                    session_id: session.id.clone(),
+                }),
+            (true, Selection::Pane(_, _, _)) => {
+                self.selected_pane_destination()
+                    .map(|(session_id, window_id, pane_id)| PasteIntent::Pane {
+                        session_id,
+                        window_id,
+                        pane_id,
+                    })
+            }
         }
     }
 
@@ -1485,7 +1562,7 @@ impl App {
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
             Action::new("o/O", "new child/peer"),
-            Action::new("x/p", "cut/paste"),
+            Action::new("x/p/P", "cut/paste"),
             Action::new("r", "rename"),
             Action::new("d", "kill"),
             Action::new("s/S", "split"),
@@ -1592,7 +1669,9 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, CreateIntent, CutTarget, InputMode, Selection, SelectionKey, pane_label};
+    use super::{
+        App, CreateIntent, CutTarget, InputMode, PasteIntent, Selection, SelectionKey, pane_label,
+    };
     use crate::{
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
@@ -2514,6 +2593,37 @@ mod tests {
             })
         );
         assert_eq!(app.status, "cut pane 2");
+    }
+
+    #[test]
+    fn paste_intent_matches_create_key_hierarchy() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "editor", true)]);
+
+        app.selection = Some(Selection::Session(0));
+        assert_eq!(
+            app.paste_intent(false),
+            Some(PasteIntent::Window {
+                session_id: String::from("$1")
+            })
+        );
+        assert_eq!(app.paste_intent(true), Some(PasteIntent::Session));
+
+        app.selection = Some(Selection::Window(0, 0));
+        assert_eq!(
+            app.paste_intent(false),
+            Some(PasteIntent::Pane {
+                session_id: String::from("$1"),
+                window_id: String::from("@1"),
+                pane_id: String::from("%@1"),
+            })
+        );
+        assert_eq!(
+            app.paste_intent(true),
+            Some(PasteIntent::Window {
+                session_id: String::from("$1")
+            })
+        );
     }
 
     fn test_app() -> App {
