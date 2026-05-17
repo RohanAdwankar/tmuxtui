@@ -245,16 +245,19 @@ impl Tmux {
         Ok(session_id)
     }
 
-    pub fn split_pane(&self, pane_id: &str, vertical: bool) -> Result<()> {
-        self.run([
+    pub fn split_pane(&self, pane_id: &str, vertical: bool) -> Result<String> {
+        let output = self.run([
             "split-window",
+            "-P",
+            "-F",
+            "#{pane_id}",
             "-t",
             pane_id,
             "-c",
             "#{pane_current_path}",
             if vertical { "-h" } else { "-v" },
-        ])
-        .map(|_| ())
+        ])?;
+        Ok(output.trim().to_owned())
     }
 
     fn pane_current_path(&self, pane_id: &str) -> Result<String> {

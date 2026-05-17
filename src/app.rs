@@ -606,7 +606,7 @@ impl App {
                 self.mode = InputMode::Prompt(PromptKind::NewWindow { session_id });
             }
             CreateIntent::NewPane => {
-                self.split_selected(false)?;
+                self.create_pane_selected()?;
             }
         }
         Ok(())
@@ -719,6 +719,18 @@ impl App {
         if let Some(pane_id) = self.selected_pane_id() {
             self.tmux.split_pane(&pane_id, vertical)?;
             self.refresh()?;
+        }
+        Ok(())
+    }
+
+    fn create_pane_selected(&mut self) -> Result<()> {
+        if let Some(base_pane_id) = self.selected_pane_id() {
+            let pane_id = self.tmux.split_pane(&base_pane_id, false)?;
+            self.refresh()?;
+            if let Some(selection) = self.selection_for_pane(&pane_id) {
+                self.selection = Some(selection);
+                self.refresh_preview()?;
+            }
         }
         Ok(())
     }
@@ -1169,6 +1181,15 @@ impl App {
 
     fn selection_for_window(&self, session_id: &str, window_id: &str) -> Option<Selection> {
         self.selection_for_ids(session_id, window_id, "")
+    }
+
+    fn selection_for_pane(&self, pane_id: &str) -> Option<Selection> {
+        self.snapshot
+            .sessions
+            .iter()
+            .flat_map(|session| session.windows.iter())
+            .find(|window| window.panes.iter().any(|pane| pane.id == pane_id))
+            .and_then(|window| self.selection_for_ids(&window.session_id, &window.id, pane_id))
     }
 
     fn selection_for_session(&self, session_id: &str) -> Option<Selection> {
@@ -2660,6 +2681,14 @@ mod tests {
                 pane_id
             }) if session_id == "$1" && window_id == "@1" && pane_id == "%1"
         ));
+    }
+
+    #[test]
+    fn selection_for_pane_finds_newly_created_pane_row() {
+        let mut app = test_app();
+        app.snapshot = split_window_snapshot();
+
+        assert_eq!(app.selection_for_pane("%2"), Some(Selection::Pane(0, 0, 1)));
     }
 
     #[test]
