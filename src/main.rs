@@ -3,7 +3,10 @@ mod managed_config;
 mod tmux;
 mod ui;
 
-use std::io::{self, Write};
+use std::{
+    env,
+    io::{self, Write},
+};
 
 use anyhow::Result;
 use crossterm::{
@@ -15,6 +18,13 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use crate::{app::App, managed_config::ManagedConfig, tmux::Tmux};
 
 fn main() -> Result<()> {
+    if env::args().any(|arg| arg == "--config") {
+        let managed = ManagedConfig::bootstrap()?;
+        let tmux = Tmux::new(managed);
+        tmux.ensure_ready()?;
+        return Ok(());
+    }
+
     loop {
         let managed = ManagedConfig::bootstrap()?;
         let tmux = Tmux::new(managed);

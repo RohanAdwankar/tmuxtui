@@ -14,6 +14,8 @@ cargo install tmuxtui
 
 ## Commands
 
+Run `tmuxtui --config` to rewrite and reload the managed tmux config without opening the TUI.
+
 ### Navigation
 
 | Keys | Action |
