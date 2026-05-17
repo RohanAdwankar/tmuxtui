@@ -589,9 +589,13 @@ impl App {
                         session_id: session.id.clone(),
                     })
             }
-            Some(Selection::Pane(_, _, _)) => {
-                self.selected_pane_id().map(|_| CreateIntent::NewPane)
-            }
+            Some(Selection::Pane(session_idx, _, _)) => self
+                .snapshot
+                .sessions
+                .get(session_idx)
+                .map(|session| CreateIntent::NewWindow {
+                    session_id: session.id.clone(),
+                }),
         }
     }
 
@@ -2100,6 +2104,20 @@ mod tests {
         let mut app = test_app();
         app.snapshot = snapshot_with_windows(&[("@1", "alpha", true)]);
         app.selection = Some(Selection::Window(0, 0));
+
+        assert_eq!(
+            app.peer_create_intent(),
+            Some(CreateIntent::NewWindow {
+                session_id: String::from("$1"),
+            })
+        );
+    }
+
+    #[test]
+    fn peer_create_on_pane_targets_new_window() {
+        let mut app = test_app();
+        app.snapshot = split_window_snapshot();
+        app.selection = Some(Selection::Pane(0, 0, 1));
 
         assert_eq!(
             app.peer_create_intent(),
