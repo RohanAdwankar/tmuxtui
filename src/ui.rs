@@ -238,13 +238,16 @@ fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &s
 
 fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
     let marker = if caffeinated {
-        "☼"
+        Some("☼")
     } else if pinned {
-        "⌖"
+        Some("⌖")
     } else {
-        " "
+        None
     };
-    format!("{marker} {line}")
+    match marker {
+        Some(marker) => format!("{marker} {line}"),
+        None => line,
+    }
 }
 
 fn session_label(name: &str, caffeinated: bool) -> String {
@@ -352,7 +355,7 @@ mod tests {
         );
         assert_eq!(
             marker_column(String::from("      2"), false, false),
-            "        2"
+            "      2"
         );
     }
 
