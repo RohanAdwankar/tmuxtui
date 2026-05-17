@@ -237,16 +237,18 @@ fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &s
 }
 
 fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
-    let marker = if caffeinated {
-        Some("☼")
-    } else if pinned {
-        Some("⌖")
+    let mut marker = String::new();
+    if caffeinated {
+        marker.push('☼');
+    }
+    if pinned {
+        marker.push('⌖');
+    }
+
+    if marker.is_empty() {
+        line
     } else {
-        None
-    };
-    match marker {
-        Some(marker) => format!("{marker} {line}"),
-        None => line,
+        format!("{marker} {line}")
     }
 }
 
@@ -352,6 +354,10 @@ mod tests {
         assert_eq!(
             marker_column(String::from("  editor 1"), false, true),
             "☼   editor 1"
+        );
+        assert_eq!(
+            marker_column(String::from("  editor 1"), true, true),
+            "☼⌖   editor 1"
         );
         assert_eq!(
             marker_column(String::from("      2"), false, false),
