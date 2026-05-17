@@ -59,6 +59,13 @@ impl ManagedConfig {
         &self.settings
     }
 
+    pub fn archive_dir(&self) -> PathBuf {
+        self.tmux_conf
+            .parent()
+            .map(|path| path.join("archive"))
+            .unwrap_or_else(|| PathBuf::from("archive"))
+    }
+
     pub fn set_show_hints(&mut self, show_hints: bool) -> Result<()> {
         self.settings.show_hints = show_hints;
         self.sync_files()

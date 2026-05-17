@@ -1,6 +1,8 @@
 use std::{
     ffi::OsStr,
+    fs,
     process::{Command, ExitStatus},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -137,6 +139,35 @@ impl Tmux {
         self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
     }
 
+    pub fn archive_panes(&self, name: &str, panes: &[(String, String)]) -> Result<String> {
+        let archive_dir = self.managed.archive_dir();
+        fs::create_dir_all(&archive_dir).with_context(|| {
+            format!(
+                "failed to create archive directory at {}",
+                archive_dir.display()
+            )
+        })?;
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("system time before unix epoch")?
+            .as_secs();
+        let path = archive_dir.join(format!("{timestamp}-{}.txt", archive_name(name)));
+        let mut output = String::new();
+        output.push_str(&format!("archive: {name}\n"));
+        output.push_str(&format!("created: {timestamp}\n"));
+
+        for (label, pane_id) in panes {
+            output.push_str(&format!("\n--- {label} {pane_id} ---\n"));
+            output.push_str(&self.capture_full_pane(pane_id)?);
+            output.push('\n');
+        }
+
+        fs::write(&path, output)
+            .with_context(|| format!("failed to write archive at {}", path.display()))?;
+        Ok(path.display().to_string())
+    }
+
     pub fn create_session(&self, name: &str) -> Result<String> {
         let output = if name.is_empty() {
             self.run(["new-session", "-P", "-F", "#{session_id}", "-d"])
@@ -144,6 +175,10 @@ impl Tmux {
             self.run(["new-session", "-P", "-F", "#{session_id}", "-d", "-s", name])
         }?;
         Ok(output.trim().to_owned())
+    }
+
+    fn capture_full_pane(&self, pane_id: &str) -> Result<String> {
+        self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-"])
     }
 
     pub fn rename_session(&self, session_id: &str, name: &str) -> Result<()> {
@@ -573,6 +608,25 @@ fn command_error(program: &str, status: &ExitStatus, context: &str) -> anyhow::E
 fn is_no_server_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
     message.contains("no server running") || message.contains("failed to connect to server")
+}
+
+fn archive_name(name: &str) -> String {
+    let clean: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let trimmed = clean.trim_matches('-').chars().take(80).collect::<String>();
+    if trimmed.is_empty() {
+        String::from("archive")
+    } else {
+        trimmed
+    }
 }
 
 fn parse_sessions(raw: &str) -> Vec<Session> {

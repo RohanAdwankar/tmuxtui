@@ -36,7 +36,10 @@ cargo install tmuxtui
 | `p` | paste into the next smaller level for the current selection |
 | `P` | paste into the same level as the current selection |
 | `r` | rename the selected session, window, or pane |
-| `d` | kill the selected session, window, or pane |
+| `d` | kill the selected session, selected pane, or first pane of a split window |
+| `D` | kill the selected session or the full selected window |
+| `a` | archive the selected session, selected pane, or first pane of a split window |
+| `A` | archive the selected session or the full selected window |
 | `s` | split the selected pane into top and bottom panes |
 | `S` | split the selected pane into left and right panes |
 | `z` | toggle zoom on the selected pane |

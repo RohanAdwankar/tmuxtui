@@ -44,6 +44,22 @@ pub enum ConfirmAction {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+enum ArchiveTarget {
+    Session {
+        name: String,
+        panes: Vec<(String, String)>,
+    },
+    Window {
+        name: String,
+        panes: Vec<(String, String)>,
+    },
+    Pane {
+        name: String,
+        pane_id: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Selection {
     Session(usize),
     Window(usize, usize),
@@ -297,7 +313,19 @@ impl App {
             }
             KeyCode::Char('d') => {
                 self.clear_count();
-                self.start_kill_prompt();
+                self.start_kill_prompt(false);
+            }
+            KeyCode::Char('D') => {
+                self.clear_count();
+                self.start_kill_prompt(true);
+            }
+            KeyCode::Char('a') => {
+                self.clear_count();
+                self.archive_selected(false)?;
+            }
+            KeyCode::Char('A') => {
+                self.clear_count();
+                self.archive_selected(true)?;
             }
             KeyCode::Char('x') => {
                 self.clear_count();
@@ -627,7 +655,7 @@ impl App {
         };
     }
 
-    fn start_kill_prompt(&mut self) {
+    fn start_kill_prompt(&mut self, whole_window: bool) {
         self.mode = match self.selection.clone() {
             Some(Selection::Session(session_idx)) => self
                 .snapshot
@@ -646,24 +674,42 @@ impl App {
                 .get(session_idx)
                 .and_then(|session| session.windows.get(window_idx))
                 .map(|window| {
-                    InputMode::Confirm(ConfirmAction::KillWindow {
-                        window_id: window.id.clone(),
-                        name: window.name.clone(),
-                    })
+                    if !whole_window && window.panes.len() > 1 {
+                        ConfirmAction::KillPane {
+                            pane_id: window.panes[0].id.clone(),
+                            name: format!("{} pane 1", window.name),
+                        }
+                    } else {
+                        ConfirmAction::KillWindow {
+                            window_id: window.id.clone(),
+                            name: window.name.clone(),
+                        }
+                    }
                 })
+                .map(InputMode::Confirm)
                 .unwrap_or(InputMode::Normal),
             Some(Selection::Pane(session_idx, window_idx, pane_idx)) => self
                 .snapshot
                 .sessions
                 .get(session_idx)
                 .and_then(|session| session.windows.get(window_idx))
-                .and_then(|window| window.panes.get(pane_idx))
-                .map(|pane| {
-                    InputMode::Confirm(ConfirmAction::KillPane {
-                        pane_id: pane.id.clone(),
-                        name: pane_label(pane_idx),
-                    })
+                .and_then(|window| {
+                    if whole_window {
+                        Some(ConfirmAction::KillWindow {
+                            window_id: window.id.clone(),
+                            name: window.name.clone(),
+                        })
+                    } else {
+                        window
+                            .panes
+                            .get(pane_idx)
+                            .map(|pane| ConfirmAction::KillPane {
+                                pane_id: pane.id.clone(),
+                                name: pane_label(pane_idx),
+                            })
+                    }
                 })
+                .map(InputMode::Confirm)
                 .unwrap_or(InputMode::Normal),
             None => InputMode::Normal,
         };
@@ -682,6 +728,24 @@ impl App {
             self.tmux.toggle_zoom(&pane_id)?;
             self.refresh()?;
         }
+        Ok(())
+    }
+
+    fn archive_selected(&mut self, whole_window: bool) -> Result<()> {
+        let Some(target) = self.archive_target_for_selection(whole_window) else {
+            self.status = String::from("nothing to archive");
+            return Ok(());
+        };
+
+        let (name, panes) = match target {
+            ArchiveTarget::Session { name, panes } | ArchiveTarget::Window { name, panes } => {
+                (name, panes)
+            }
+            ArchiveTarget::Pane { name, pane_id } => (name, vec![(String::from("pane"), pane_id)]),
+        };
+
+        let path = self.tmux.archive_panes(&name, &panes)?;
+        self.status = format!("archived {path}");
         Ok(())
     }
 
@@ -1420,6 +1484,46 @@ impl App {
         }
     }
 
+    fn archive_target_for_selection(&self, whole_window: bool) -> Option<ArchiveTarget> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                Some(ArchiveTarget::Session {
+                    name: format!("session-{}", session.name),
+                    panes: session_archive_panes(session),
+                })
+            }
+            Selection::Window(session_idx, window_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = session.windows.get(*window_idx)?;
+                if !whole_window && window.panes.len() > 1 {
+                    return window.panes.first().map(|pane| ArchiveTarget::Pane {
+                        name: format!("pane-{}-1", window.name),
+                        pane_id: pane.id.clone(),
+                    });
+                }
+                Some(ArchiveTarget::Window {
+                    name: format!("window-{}-{}", session.name, window.name),
+                    panes: window_archive_panes(window),
+                })
+            }
+            Selection::Pane(session_idx, window_idx, pane_idx) => {
+                let session = self.snapshot.sessions.get(*session_idx)?;
+                let window = session.windows.get(*window_idx)?;
+                if whole_window {
+                    return Some(ArchiveTarget::Window {
+                        name: format!("window-{}-{}", session.name, window.name),
+                        panes: window_archive_panes(window),
+                    });
+                }
+                window.panes.get(*pane_idx).map(|pane| ArchiveTarget::Pane {
+                    name: format!("pane-{}-{}", window.name, pane_label(*pane_idx)),
+                    pane_id: pane.id.clone(),
+                })
+            }
+        }
+    }
+
     fn paste_intent(&self, peer: bool) -> Option<PasteIntent> {
         match (peer, self.selection.as_ref()?) {
             (false, Selection::Session(session_idx)) => self
@@ -1569,7 +1673,8 @@ impl App {
             Action::new("o/O", "new child/peer"),
             Action::new("x/p/P", "cut/paste"),
             Action::new("r", "rename"),
-            Action::new("d", "kill"),
+            Action::new("d/D", "kill"),
+            Action::new("a/A", "archive"),
             Action::new("s/S", "split"),
             Action::new("z", "zoom"),
             Action::new("tab", "focus"),
@@ -1664,6 +1769,30 @@ fn pane_label(pane_idx: usize) -> String {
     (pane_idx + 1).to_string()
 }
 
+fn session_archive_panes(session: &crate::tmux::Session) -> Vec<(String, String)> {
+    session
+        .windows
+        .iter()
+        .flat_map(|window| {
+            window.panes.iter().enumerate().map(|(pane_idx, pane)| {
+                (
+                    format!("window {} pane {}", window.name, pane_idx + 1),
+                    pane.id.clone(),
+                )
+            })
+        })
+        .collect()
+}
+
+fn window_archive_panes(window: &crate::tmux::Window) -> Vec<(String, String)> {
+    window
+        .panes
+        .iter()
+        .enumerate()
+        .map(|(pane_idx, pane)| (format!("pane {}", pane_idx + 1), pane.id.clone()))
+        .collect()
+}
+
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
         format!("{} 1", window.name)
@@ -1675,7 +1804,8 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        App, CreateIntent, CutTarget, InputMode, PasteIntent, Selection, SelectionKey, pane_label,
+        App, ArchiveTarget, ConfirmAction, CreateIntent, CutTarget, InputMode, PasteIntent,
+        Selection, SelectionKey, pane_label,
     };
     use crate::{
         managed_config::ManagedConfig,
@@ -2533,6 +2663,65 @@ mod tests {
     }
 
     #[test]
+    fn d_on_split_window_targets_first_pane() {
+        let mut app = test_app();
+        app.snapshot = split_window_snapshot();
+        app.selection = Some(Selection::Window(0, 0));
+
+        app.start_kill_prompt(false);
+
+        assert_eq!(
+            app.mode,
+            InputMode::Confirm(ConfirmAction::KillPane {
+                pane_id: String::from("%1"),
+                name: String::from("editor pane 1"),
+            })
+        );
+    }
+
+    #[test]
+    fn uppercase_d_on_split_window_targets_full_window() {
+        let mut app = test_app();
+        app.snapshot = split_window_snapshot();
+        app.selection = Some(Selection::Window(0, 0));
+
+        app.start_kill_prompt(true);
+
+        assert_eq!(
+            app.mode,
+            InputMode::Confirm(ConfirmAction::KillWindow {
+                window_id: String::from("@1"),
+                name: String::from("editor"),
+            })
+        );
+    }
+
+    #[test]
+    fn archive_target_matches_kill_scope() {
+        let mut app = test_app();
+        app.snapshot = split_window_snapshot();
+        app.selection = Some(Selection::Window(0, 0));
+
+        assert_eq!(
+            app.archive_target_for_selection(false),
+            Some(ArchiveTarget::Pane {
+                name: String::from("pane-editor-1"),
+                pane_id: String::from("%1"),
+            })
+        );
+        assert_eq!(
+            app.archive_target_for_selection(true),
+            Some(ArchiveTarget::Window {
+                name: String::from("window-dev-editor"),
+                panes: vec![
+                    (String::from("pane 1"), String::from("%1")),
+                    (String::from("pane 2"), String::from("%2")),
+                ],
+            })
+        );
+    }
+
+    #[test]
     fn x_cuts_selected_window() {
         let mut app = test_app();
         app.snapshot = snapshot_with_windows(&[("@1", "editor", true), ("@2", "shell", false)]);
@@ -2634,6 +2823,40 @@ mod tests {
     fn test_app() -> App {
         let managed = ManagedConfig::bootstrap().expect("config");
         App::new(Tmux::new(managed))
+    }
+
+    fn split_window_snapshot() -> Snapshot {
+        Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("dev"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@1"),
+                    name: String::from("editor"),
+                    active: true,
+                    session_id: String::from("$1"),
+                    panes: vec![
+                        Pane {
+                            id: String::from("%1"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: false,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                        Pane {
+                            id: String::from("%2"),
+                            current_command: String::from("zsh"),
+                            current_path: String::from("/tmp"),
+                            active: true,
+                            zoomed: false,
+                            window_id: String::from("@1"),
+                        },
+                    ],
+                }],
+            }],
+        }
     }
 
     fn snapshot_with_windows(windows: &[(&str, &str, bool)]) -> Snapshot {
