@@ -129,11 +129,6 @@ impl Tmux {
         }
 
         sessions.sort_by(|left, right| left.name.cmp(&right.name));
-        for session in &mut sessions {
-            session
-                .windows
-                .sort_by(|left, right| left.name.cmp(&right.name));
-        }
 
         Ok(Snapshot { sessions })
     }
@@ -661,5 +656,15 @@ mod tests {
 
         assert_eq!(panes[0].id, "%10");
         assert_eq!(panes[1].id, "%2");
+    }
+
+    #[test]
+    fn keeps_tmux_window_listing_order() {
+        let windows = parse_windows("$1\t@10\tzsh\t1\n$1\t@2\tagent\t0\n");
+
+        assert_eq!(windows[0].id, "@10");
+        assert_eq!(windows[0].name, "zsh");
+        assert_eq!(windows[1].id, "@2");
+        assert_eq!(windows[1].name, "agent");
     }
 }
