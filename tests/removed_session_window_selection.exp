@@ -24,7 +24,7 @@ send -- "j"
 after 200
 exec sh -c "sleep 1; TMUX_TMPDIR='$tmux_tmpdir' tmux kill-session -t beta" &
 after 1800
-send -- "r"
+send -- "e"
 after 200
 send -- "zzz"
 after 200

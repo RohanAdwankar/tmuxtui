@@ -1,13 +1,14 @@
 #!/usr/bin/expect -f
 
-if {$argc != 3} {
-    puts stderr "usage: stale_last_target_selection.exp <binary> <tmux_tmpdir> <result_file>"
+if {$argc != 4} {
+    puts stderr "usage: remote_tmux_pane.exp <binary> <tmux_tmpdir> <result_file> <remote_tmpdir>"
     exit 2
 }
 
 set binary [lindex $argv 0]
 set tmux_tmpdir [lindex $argv 1]
 set result_file [lindex $argv 2]
+set remote_tmpdir [lindex $argv 3]
 
 set env(TMUX_TMPDIR) $tmux_tmpdir
 set env(TERM) "xterm-256color"
@@ -16,24 +17,18 @@ set timeout 20
 spawn -noecho $binary
 
 after 1500
-send -- "e"
-after 200
-send -- "\177\177\177\177\177\177\177\177\177\177"
-after 200
-send -- "zzz"
-after 200
-send -- "\r"
-after 700
-send -- "\r"
-after 1500
-send -- "tmux display-message -p '#S:#W' > '$result_file'\r"
+send -- "r"
+after 2000
+send -- "tmux display-message -p '#S' > '$result_file'\r"
 
 for {set attempt 0} {$attempt < 120} {incr attempt} {
     if {[file exists $result_file]} {
+        exec sh -c "TMUX_TMPDIR='$remote_tmpdir' tmux kill-server >/dev/null 2>&1 || true"
         exit 0
     }
     after 100
 }
 
+exec sh -c "TMUX_TMPDIR='$remote_tmpdir' tmux kill-server >/dev/null 2>&1 || true"
 puts stderr "timed out waiting for result file"
 exit 1

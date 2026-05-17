@@ -37,7 +37,8 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | `x` | cut the selected window or pane |
 | `p` | paste into the next smaller level for the current selection |
 | `P` | paste into the same level as the current selection |
-| `r` | rename the selected session, window, or pane |
+| `r` | start or attach a `tmuxtui` tmux session inside the selected pane |
+| `e` | rename the selected session, window, or pane |
 | `d` | kill the selected session, selected pane, or first pane of a split window |
 | `D` | kill the selected session or the full selected window |
 | `a` | archive the selected session, selected pane, or first pane of a split window |

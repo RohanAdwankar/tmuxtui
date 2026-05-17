@@ -1,7 +1,7 @@
 use std::{
     ffi::OsStr,
     fs,
-    process::{Command, ExitStatus},
+    process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -355,6 +355,17 @@ impl Tmux {
         self.run(["resize-pane", "-t", pane_id, "-Z"]).map(|_| ())
     }
 
+    pub fn attach_remote_tmux(&self, pane_id: &str) -> Result<()> {
+        self.run([
+            "send-keys",
+            "-t",
+            pane_id,
+            "tmux new-session -A -s tmuxtui",
+            "C-m",
+        ])
+        .map(|_| ())
+    }
+
     pub fn attach(&self, target: &TargetKind) -> Result<()> {
         self.apply_pinned_pane(target)?;
         match target {
@@ -455,10 +466,10 @@ impl Tmux {
             .args(args)
             .status()
             .context("failed to execute tmux attach")?;
-        if status.success() {
+        if status.success() || status.code() == Some(1) {
             Ok(())
         } else {
-            Err(command_error("tmux", &status, "attach failed"))
+            Err(anyhow!("attach failed"))
         }
     }
 
@@ -602,10 +613,6 @@ where
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
         Err(anyhow!(stderr))
     }
-}
-
-fn command_error(program: &str, status: &ExitStatus, context: &str) -> anyhow::Error {
-    anyhow!("{program} exited with {status}: {context}")
 }
 
 fn is_no_server_error(error: &anyhow::Error) -> bool {

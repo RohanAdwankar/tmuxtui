@@ -384,9 +384,13 @@ impl App {
                 self.clear_count();
                 self.start_peer_create()?;
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('e') => {
                 self.clear_count();
                 self.start_rename_prompt();
+            }
+            KeyCode::Char('r') => {
+                self.clear_count();
+                self.attach_remote_tmux_selected()?;
             }
             KeyCode::Char('s') => {
                 self.clear_count();
@@ -873,6 +877,26 @@ impl App {
             self.attach_target = Some(target);
             self.should_quit = true;
         }
+        Ok(())
+    }
+
+    fn attach_remote_tmux_selected(&mut self) -> Result<()> {
+        let Some(pane_id) = self.selected_pane_id() else {
+            self.status = String::from("remote tmux requires pane selection");
+            return Ok(());
+        };
+        let Some(target) = self.selected_target() else {
+            self.status = String::from("remote tmux requires pane selection");
+            return Ok(());
+        };
+
+        let last_target = self
+            .last_target_for_selection()
+            .unwrap_or_else(|| target.clone());
+        self.tmux.set_last_target(&last_target)?;
+        self.tmux.attach_remote_tmux(&pane_id)?;
+        self.attach_target = Some(target);
+        self.should_quit = true;
         Ok(())
     }
 
@@ -1697,7 +1721,8 @@ impl App {
             Action::new("f", "filter"),
             Action::new("o/O", "new child/peer"),
             Action::new("x/p/P", "cut/paste"),
-            Action::new("r", "rename"),
+            Action::new("r", "remote tmux"),
+            Action::new("e", "rename"),
             Action::new("d/D", "kill"),
             Action::new("a/A", "archive"),
             Action::new("s/S", "split"),
