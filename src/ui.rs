@@ -42,7 +42,7 @@ impl<'a> DrawState<'a> {
                 Selection::Session(session_idx) => {
                     let session = &app.snapshot.sessions[session_idx];
                     tree_lines.push(styled_line(
-                        session.name.clone(),
+                        pin_column(session.name.clone(), false),
                         app.selection.as_ref() == Some(&selection),
                         session.attached && multi_session,
                         true,
@@ -56,7 +56,7 @@ impl<'a> DrawState<'a> {
                         .first()
                         .is_some_and(|pane| app.pinned_pane.as_deref() == Some(pane.id.as_str()));
                     tree_lines.push(styled_line(
-                        pin_marker(format!("  {}", window_tree_label(window)), pinned),
+                        pin_column(format!("  {}", window_tree_label(window)), pinned),
                         app.selection.as_ref() == Some(&selection),
                         window.active && multi_window,
                         false,
@@ -69,7 +69,7 @@ impl<'a> DrawState<'a> {
                     let multi_pane = window.panes.len() > 1;
                     let pinned = app.pinned_pane.as_deref() == Some(pane.id.as_str());
                     tree_lines.push(styled_line(
-                        pin_marker(pane_tree_line(window, pane_idx, zoom), pinned),
+                        pin_column(pane_tree_line(window, pane_idx, zoom), pinned),
                         app.selection.as_ref() == Some(&selection),
                         pane.active && multi_pane,
                         false,
@@ -228,8 +228,9 @@ fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &s
     }
 }
 
-fn pin_marker(line: String, pinned: bool) -> String {
-    if pinned { format!("{line} ⌖") } else { line }
+fn pin_column(line: String, pinned: bool) -> String {
+    let marker = if pinned { "⌖" } else { " " };
+    format!("{marker} {line}")
 }
 
 fn window_tree_label(window: &crate::tmux::Window) -> String {
@@ -242,7 +243,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{pane_tree_label, pane_tree_line, pin_marker, window_tree_label};
+    use super::{pane_tree_label, pane_tree_line, pin_column, window_tree_label};
     use crate::tmux::Window;
 
     #[test]
@@ -313,9 +314,9 @@ mod tests {
     }
 
     #[test]
-    fn pin_marker_marks_pinned_rows_only() {
-        assert_eq!(pin_marker(String::from("  editor 1"), true), "  editor 1 ⌖");
-        assert_eq!(pin_marker(String::from("      2"), false), "      2");
+    fn pin_column_marks_pinned_rows_without_shifting_labels() {
+        assert_eq!(pin_column(String::from("  editor 1"), true), "⌖   editor 1");
+        assert_eq!(pin_column(String::from("      2"), false), "        2");
     }
 }
 
