@@ -82,7 +82,7 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | new window with blank name | tmux creates it unnamed and automatic rename uses the first real command |
 | pane labels | panes are shown as `1`, `2`, and so on within each window |
 | rename window to blank | the window falls back to the active pane command when possible |
-| pinned pane | the tree shows `⌖` in the left marker column for the pinned pane |
+| pinned pane | the tree shows `⚲` in the left marker column for the pinned pane |
 
 ## Defaults
 

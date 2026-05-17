@@ -242,7 +242,7 @@ fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
         marker.push('☼');
     }
     if pinned {
-        marker.push('⌖');
+        marker.push('⚲');
     }
 
     if marker.is_empty() {
@@ -365,7 +365,7 @@ mod tests {
     fn marker_column_marks_rows_without_shifting_labels() {
         assert_eq!(
             marker_column(String::from("  editor 1"), true, false),
-            "⌖ editor 1"
+            "⚲ editor 1"
         );
         assert_eq!(
             marker_column(String::from("  editor 1"), false, true),
@@ -373,7 +373,7 @@ mod tests {
         );
         assert_eq!(
             marker_column(String::from("  editor 1"), true, true),
-            "☼⌖editor 1"
+            "☼⚲editor 1"
         );
         assert_eq!(
             marker_column(String::from("      2"), false, false),
