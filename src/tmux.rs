@@ -133,9 +133,6 @@ impl Tmux {
             session
                 .windows
                 .sort_by(|left, right| left.name.cmp(&right.name));
-            for window in &mut session.windows {
-                window.panes.sort_by(|left, right| left.id.cmp(&right.id));
-            }
         }
 
         Ok(Snapshot { sessions })
@@ -656,5 +653,13 @@ mod tests {
         assert_eq!(panes[0].current_path, "/Users/me/project");
         assert!(panes[0].active);
         assert!(!panes[0].zoomed);
+    }
+
+    #[test]
+    fn keeps_tmux_pane_listing_order() {
+        let panes = parse_panes("@1\t%10\tmain\tzsh\t/tmp\t1\t0\n@1\t%2\tmain\tzsh\t/tmp\t0\t0\n");
+
+        assert_eq!(panes[0].id, "%10");
+        assert_eq!(panes[1].id, "%2");
     }
 }
