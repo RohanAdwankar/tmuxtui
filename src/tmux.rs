@@ -448,6 +448,36 @@ impl Tmux {
         Ok(())
     }
 
+    pub fn toggle_caffeinate(&self, target_id: &str) -> Result<bool> {
+        let mut entries = self.caffeinate_entries();
+        if let Some(index) = entries
+            .iter()
+            .position(|entry| entry.target_id == target_id)
+        {
+            let entry = entries.remove(index);
+            stop_caffeinate(entry.pid);
+            self.set_caffeinate_entries(&entries)?;
+            return Ok(false);
+        }
+
+        let pid = start_caffeinate()?;
+        entries.push(CaffeinateEntry {
+            target_id: target_id.to_owned(),
+            pid,
+        });
+        self.set_caffeinate_entries(&entries)?;
+        Ok(true)
+    }
+
+    pub fn caffeinated_target_ids(&self) -> Result<Vec<String>> {
+        self.clear_stale_caffeinates()?;
+        Ok(self
+            .caffeinate_entries()
+            .into_iter()
+            .map(|entry| entry.target_id)
+            .collect())
+    }
+
     pub fn pinned_pane(&self) -> Option<String> {
         self.option_value("@tmuxtui-pinned-pane")
     }
@@ -513,7 +543,42 @@ impl Tmux {
             self.run(["set-option", "-gq", "@tmuxtui-pane", ""])?;
         }
 
+        self.clear_stale_caffeinates()?;
         Ok(())
+    }
+
+    fn clear_stale_caffeinates(&self) -> Result<()> {
+        let mut kept = Vec::new();
+        for entry in self.caffeinate_entries() {
+            if self.target_exists(&entry.target_id) && caffeinate_running(entry.pid) {
+                kept.push(entry);
+            } else {
+                stop_caffeinate(entry.pid);
+            }
+        }
+        self.set_caffeinate_entries(&kept)?;
+        Ok(())
+    }
+
+    fn caffeinate_entries(&self) -> Vec<CaffeinateEntry> {
+        self.option_value("@tmuxtui-caffeinate")
+            .map(|value| parse_caffeinate_entries(&value))
+            .unwrap_or_default()
+    }
+
+    fn set_caffeinate_entries(&self, entries: &[CaffeinateEntry]) -> Result<()> {
+        self.run([
+            "set-option",
+            "-gq",
+            "@tmuxtui-caffeinate",
+            &render_caffeinate_entries(entries),
+        ])?;
+        Ok(())
+    }
+
+    fn target_exists(&self, target_id: &str) -> bool {
+        self.run(["display-message", "-p", "-t", target_id, "#{session_id}"])
+            .is_ok()
     }
 
     fn apply_pinned_pane(&self, target: &TargetKind) -> Result<()> {
@@ -620,6 +685,82 @@ fn is_no_server_error(error: &anyhow::Error) -> bool {
     message.contains("no server running") || message.contains("failed to connect to server")
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CaffeinateEntry {
+    target_id: String,
+    pid: u32,
+}
+
+fn parse_caffeinate_entries(raw: &str) -> Vec<CaffeinateEntry> {
+    raw.split(';')
+        .filter_map(|entry| {
+            let (target_id, pid) = entry.split_once(':')?;
+            Some(CaffeinateEntry {
+                target_id: target_id.to_owned(),
+                pid: pid.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
+fn render_caffeinate_entries(entries: &[CaffeinateEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| format!("{}:{}", entry.target_id, entry.pid))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+#[cfg(target_os = "macos")]
+fn start_caffeinate() -> Result<u32> {
+    let output = Command::new("sh")
+        .args([
+            "-c",
+            "nohup caffeinate -dimsu </dev/null >/dev/null 2>&1 & echo $!",
+        ])
+        .output()
+        .context("failed to start caffeinate")?;
+    if !output.status.success() {
+        bail!("failed to start caffeinate");
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u32>()
+        .context("failed to read caffeinate pid")
+}
+
+#[cfg(not(target_os = "macos"))]
+fn start_caffeinate() -> Result<u32> {
+    bail!("caffeinate is only available on macOS")
+}
+
+fn stop_caffeinate(pid: u32) {
+    if caffeinate_running(pid) {
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+}
+
+fn caffeinate_running(pid: u32) -> bool {
+    let pid = pid.to_string();
+    let alive = Command::new("kill")
+        .args(["-0", &pid])
+        .status()
+        .is_ok_and(|status| status.success());
+    if !alive {
+        return false;
+    }
+
+    Command::new("ps")
+        .args(["-p", &pid, "-o", "comm="])
+        .output()
+        .is_ok_and(|output| {
+            output.status.success()
+                && String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .ends_with("caffeinate")
+        })
+}
+
 fn archive_name(name: &str) -> String {
     let clean: String = name
         .chars()
@@ -689,7 +830,10 @@ fn parse_panes(raw: &str) -> Vec<Pane> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_panes, parse_sessions, parse_windows};
+    use super::{
+        CaffeinateEntry, parse_caffeinate_entries, parse_panes, parse_sessions, parse_windows,
+        render_caffeinate_entries,
+    };
 
     #[test]
     fn parses_tmux_snapshot_rows() {
@@ -730,5 +874,28 @@ mod tests {
         assert_eq!(windows[0].name, "zsh");
         assert_eq!(windows[1].id, "@2");
         assert_eq!(windows[1].name, "agent");
+    }
+
+    #[test]
+    fn round_trips_caffeinate_entries() {
+        let entries = vec![
+            CaffeinateEntry {
+                target_id: String::from("$1"),
+                pid: 12,
+            },
+            CaffeinateEntry {
+                target_id: String::from("@2"),
+                pid: 34,
+            },
+            CaffeinateEntry {
+                target_id: String::from("%3"),
+                pid: 56,
+            },
+        ];
+
+        let rendered = render_caffeinate_entries(&entries);
+
+        assert_eq!(rendered, "$1:12;@2:34;%3:56");
+        assert_eq!(parse_caffeinate_entries(&rendered), entries);
     }
 }

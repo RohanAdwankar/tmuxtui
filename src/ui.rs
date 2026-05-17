@@ -42,7 +42,11 @@ impl<'a> DrawState<'a> {
                 Selection::Session(session_idx) => {
                     let session = &app.snapshot.sessions[session_idx];
                     tree_lines.push(styled_line(
-                        pin_column(session.name.clone(), false),
+                        marker_column(
+                            session.name.clone(),
+                            false,
+                            app.caffeinated_targets.contains(&session.id),
+                        ),
                         app.selection.as_ref() == Some(&selection),
                         session.attached && multi_session,
                         true,
@@ -55,8 +59,13 @@ impl<'a> DrawState<'a> {
                         .panes
                         .first()
                         .is_some_and(|pane| app.pinned_pane.as_deref() == Some(pane.id.as_str()));
+                    let caffeinated = app.caffeinated_targets.contains(&window.id);
                     tree_lines.push(styled_line(
-                        pin_column(format!("  {}", window_tree_label(window)), pinned),
+                        marker_column(
+                            format!("  {}", window_tree_label(window)),
+                            pinned,
+                            caffeinated,
+                        ),
                         app.selection.as_ref() == Some(&selection),
                         window.active && multi_window,
                         false,
@@ -68,8 +77,9 @@ impl<'a> DrawState<'a> {
                     let zoom = if pane.zoomed { " z" } else { "" };
                     let multi_pane = window.panes.len() > 1;
                     let pinned = app.pinned_pane.as_deref() == Some(pane.id.as_str());
+                    let caffeinated = app.caffeinated_targets.contains(&pane.id);
                     tree_lines.push(styled_line(
-                        pin_column(pane_tree_line(window, pane_idx, zoom), pinned),
+                        marker_column(pane_tree_line(window, pane_idx, zoom), pinned, caffeinated),
                         app.selection.as_ref() == Some(&selection),
                         pane.active && multi_pane,
                         false,
@@ -228,8 +238,14 @@ fn pane_tree_line(window: &crate::tmux::Window, pane_idx: usize, zoom_suffix: &s
     }
 }
 
-fn pin_column(line: String, pinned: bool) -> String {
-    let marker = if pinned { "⌖" } else { " " };
+fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
+    let marker = if caffeinated {
+        "☼"
+    } else if pinned {
+        "⌖"
+    } else {
+        " "
+    };
     format!("{marker} {line}")
 }
 
@@ -243,7 +259,7 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{pane_tree_label, pane_tree_line, pin_column, window_tree_label};
+    use super::{marker_column, pane_tree_label, pane_tree_line, window_tree_label};
     use crate::tmux::Window;
 
     #[test]
@@ -314,9 +330,19 @@ mod tests {
     }
 
     #[test]
-    fn pin_column_marks_pinned_rows_without_shifting_labels() {
-        assert_eq!(pin_column(String::from("  editor 1"), true), "⌖   editor 1");
-        assert_eq!(pin_column(String::from("      2"), false), "        2");
+    fn marker_column_marks_rows_without_shifting_labels() {
+        assert_eq!(
+            marker_column(String::from("  editor 1"), true, false),
+            "⌖   editor 1"
+        );
+        assert_eq!(
+            marker_column(String::from("  editor 1"), false, true),
+            "☼   editor 1"
+        );
+        assert_eq!(
+            marker_column(String::from("      2"), false, false),
+            "        2"
+        );
     }
 }
 

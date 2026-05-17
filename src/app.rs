@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    collections::HashSet,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -119,6 +122,7 @@ pub struct App {
     pub(crate) preview: String,
     pub(crate) status: String,
     pub(crate) pinned_pane: Option<String>,
+    pub(crate) caffeinated_targets: HashSet<String>,
     last_refresh: Instant,
     should_quit: bool,
     attach_target: Option<TargetKind>,
@@ -143,6 +147,7 @@ impl App {
             preview: String::new(),
             status: String::new(),
             pinned_pane: None,
+            caffeinated_targets: HashSet::new(),
             last_refresh: Instant::now() - TICK_RATE,
             should_quit: false,
             attach_target: None,
@@ -326,6 +331,10 @@ impl App {
             KeyCode::Char('A') => {
                 self.clear_count();
                 self.archive_selected(true)?;
+            }
+            KeyCode::Char('c') => {
+                self.clear_count();
+                self.toggle_caffeinate_selected()?;
             }
             KeyCode::Char('x') => {
                 self.clear_count();
@@ -769,6 +778,23 @@ impl App {
         Ok(())
     }
 
+    fn toggle_caffeinate_selected(&mut self) -> Result<()> {
+        let Some(target_id) = self.selected_caffeinate_target_id() else {
+            self.status = String::from("caffeinate requires selection");
+            return Ok(());
+        };
+
+        let enabled = self.tmux.toggle_caffeinate(&target_id)?;
+        if enabled {
+            self.caffeinated_targets.insert(target_id);
+            self.status = String::from("caffeinated");
+        } else {
+            self.caffeinated_targets.remove(&target_id);
+            self.status = String::from("decaffeinated");
+        }
+        Ok(())
+    }
+
     fn cut_selected(&mut self) {
         self.cut_target = self.cut_target_for_selection();
         self.status = match self.cut_target.as_ref() {
@@ -964,6 +990,7 @@ impl App {
         });
         self.snapshot = self.tmux.snapshot()?;
         self.pinned_pane = self.tmux.pinned_pane();
+        self.caffeinated_targets = self.tmux.caffeinated_target_ids()?.into_iter().collect();
         self.reconcile_selection(previous_selection.as_ref(), previous_index);
         self.refresh_preview()?;
         self.last_refresh = Instant::now();
@@ -1707,6 +1734,29 @@ impl App {
         }
     }
 
+    fn selected_caffeinate_target_id(&self) -> Option<String> {
+        match self.selection.as_ref()? {
+            Selection::Session(session_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .map(|session| session.id.clone()),
+            Selection::Window(session_idx, window_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .map(|window| window.id.clone()),
+            Selection::Pane(session_idx, window_idx, pane_idx) => self
+                .snapshot
+                .sessions
+                .get(*session_idx)
+                .and_then(|session| session.windows.get(*window_idx))
+                .and_then(|window| window.panes.get(*pane_idx))
+                .map(|pane| pane.id.clone()),
+        }
+    }
+
     pub fn actions(&self) -> Vec<Action<'static>> {
         if !self.tmux.show_hints() {
             return Vec::new();
@@ -1720,6 +1770,7 @@ impl App {
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
             Action::new("o/O", "new child/peer"),
+            Action::new("c", "caffeinate"),
             Action::new("x/p/P", "cut/paste"),
             Action::new("r", "remote tmux"),
             Action::new("e", "rename"),
