@@ -248,6 +248,22 @@ fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
     if marker.is_empty() {
         line
     } else {
+        replace_leading_spaces(&line, &marker)
+    }
+}
+
+fn replace_leading_spaces(line: &str, marker: &str) -> String {
+    let leading_spaces = line.chars().take_while(|ch| *ch == ' ').count();
+    if leading_spaces >= marker.chars().count() {
+        let rest = line
+            .chars()
+            .skip(marker.chars().count())
+            .collect::<String>();
+        format!("{marker}{rest}")
+    } else if leading_spaces > 0 {
+        let rest = line.chars().skip(leading_spaces).collect::<String>();
+        format!("{marker}{rest}")
+    } else {
         format!("{marker} {line}")
     }
 }
@@ -349,15 +365,15 @@ mod tests {
     fn marker_column_marks_rows_without_shifting_labels() {
         assert_eq!(
             marker_column(String::from("  editor 1"), true, false),
-            "⌖   editor 1"
+            "⌖ editor 1"
         );
         assert_eq!(
             marker_column(String::from("  editor 1"), false, true),
-            "☼   editor 1"
+            "☼ editor 1"
         );
         assert_eq!(
             marker_column(String::from("  editor 1"), true, true),
-            "☼⌖   editor 1"
+            "☼⌖editor 1"
         );
         assert_eq!(
             marker_column(String::from("      2"), false, false),
