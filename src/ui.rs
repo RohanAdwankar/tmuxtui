@@ -3,6 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
+    widgets::Clear,
     widgets::{Paragraph, Wrap},
 };
 
@@ -42,11 +43,7 @@ impl<'a> DrawState<'a> {
                 Selection::Session(session_idx) => {
                     let session = &app.snapshot.sessions[session_idx];
                     tree_lines.push(styled_line(
-                        marker_column(
-                            session.name.clone(),
-                            false,
-                            app.caffeinated_targets.contains(&session.id),
-                        ),
+                        session_label(&session.name, app.caffeinated_targets.contains(&session.id)),
                         app.selection.as_ref() == Some(&selection),
                         session.attached && multi_session,
                         true,
@@ -129,6 +126,7 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
 }
 
 fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
+    frame.render_widget(Clear, area);
     let paragraph = Paragraph::new(Text::from(state.tree_lines.clone()))
         .style(Style::default().bg(Color::Indexed(236)))
         .wrap(Wrap { trim: false });
@@ -249,6 +247,14 @@ fn marker_column(line: String, pinned: bool, caffeinated: bool) -> String {
     format!("{marker} {line}")
 }
 
+fn session_label(name: &str, caffeinated: bool) -> String {
+    if caffeinated {
+        format!("{name} ☼")
+    } else {
+        name.to_owned()
+    }
+}
+
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
         format!("{} 1", window.name)
@@ -259,8 +265,13 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{marker_column, pane_tree_label, pane_tree_line, window_tree_label};
-    use crate::tmux::Window;
+    use super::{marker_column, pane_tree_label, pane_tree_line, session_label, window_tree_label};
+    use crate::{
+        app::App,
+        managed_config::ManagedConfig,
+        tmux::{Pane, Session, Snapshot, Tmux, Window},
+    };
+    use std::collections::HashSet;
 
     #[test]
     fn pane_tree_label_uses_window_local_numbers() {
@@ -343,6 +354,49 @@ mod tests {
             marker_column(String::from("      2"), false, false),
             "        2"
         );
+    }
+
+    #[test]
+    fn session_label_places_marker_after_name() {
+        assert_eq!(session_label("node", false), "node");
+        assert_eq!(session_label("node", true), "node ☼");
+    }
+
+    #[test]
+    fn draw_state_places_session_marker_after_name() {
+        let managed = ManagedConfig::bootstrap().expect("config");
+        let mut app = App::new(Tmux::new(managed));
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$4"),
+                name: String::from("4"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@8"),
+                    name: String::from("zsh"),
+                    active: true,
+                    session_id: String::from("$4"),
+                    panes: vec![Pane {
+                        id: String::from("%9"),
+                        current_command: String::from("zsh"),
+                        current_path: String::from("/tmp"),
+                        active: true,
+                        zoomed: false,
+                        window_id: String::from("@8"),
+                    }],
+                }],
+            }],
+        };
+        app.caffeinated_targets = HashSet::from([String::from("$4")]);
+
+        let state = super::DrawState::from_app(&app);
+        let rendered = state.tree_lines[0]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(rendered, "4 ☼");
     }
 }
 
