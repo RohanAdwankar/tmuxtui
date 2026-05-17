@@ -393,11 +393,15 @@ impl App {
                 self.clear_count();
                 self.start_peer_create()?;
             }
-            KeyCode::Char('e') => {
+            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.clear_count();
+                self.refresh()?;
+            }
+            KeyCode::Char('r') => {
                 self.clear_count();
                 self.start_rename_prompt();
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('R') => {
                 self.clear_count();
                 self.attach_remote_tmux_selected()?;
             }
@@ -412,10 +416,6 @@ impl App {
             KeyCode::Char('z') => {
                 self.clear_count();
                 self.zoom_selected()?;
-            }
-            KeyCode::Char('R') if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.clear_count();
-                self.refresh()?;
             }
             _ => {
                 self.pending_g = false;
@@ -1772,8 +1772,8 @@ impl App {
             Action::new("o/O", "new child/peer"),
             Action::new("c", "caffeinate"),
             Action::new("x/p/P", "cut/paste"),
-            Action::new("r", "remote tmux"),
-            Action::new("e", "rename"),
+            Action::new("r", "rename"),
+            Action::new("R", "remote tmux"),
             Action::new("d/D", "kill"),
             Action::new("a/A", "archive"),
             Action::new("s/S", "split"),

@@ -37,8 +37,8 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | `x` | cut the selected window or pane |
 | `p` | paste into the next smaller level for the current selection |
 | `P` | paste into the same level as the current selection |
-| `r` | start or attach a `tmuxtui` tmux session inside the selected pane |
-| `e` | rename the selected session, window, or pane |
+| `r` | rename the selected session, window, or pane |
+| `R` | start or attach a `tmuxtui` tmux session inside the selected pane |
 | `c` | toggle macOS caffeinate for the selected session, window, or pane |
 | `d` | kill the selected session, selected pane, or first pane of a split window |
 | `D` | kill the selected session or the full selected window |
@@ -47,7 +47,7 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | `s` | split the selected pane into top and bottom panes |
 | `S` | split the selected pane into left and right panes |
 | `z` | toggle zoom on the selected pane |
-| `R` | refresh tmux state |
+| `Ctrl-r` | refresh tmux state |
 | `q` | quit `tmux-tui` |
 | `Ctrl-q` | detach tmux and return to `tmux-tui` |
 

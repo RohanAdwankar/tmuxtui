@@ -17,7 +17,7 @@ set timeout 20
 spawn -noecho $binary
 
 after 1500
-send -- "r"
+send -- "R"
 after 2000
 send -- "tmux display-message -p '#S' > '$result_file'\r"
 

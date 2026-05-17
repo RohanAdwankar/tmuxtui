@@ -24,7 +24,7 @@ send -- "d"
 after 200
 send -- "y"
 after 500
-send -- "e"
+send -- "r"
 after 200
 send -- "zzz"
 after 200

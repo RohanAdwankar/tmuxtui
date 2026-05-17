@@ -16,7 +16,7 @@ set timeout 20
 spawn -noecho $binary
 
 after 1500
-send -- "e"
+send -- "r"
 after 200
 send -- "\177\177\177\177\177\177\177\177\177\177"
 after 200
