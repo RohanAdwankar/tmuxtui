@@ -801,7 +801,7 @@ impl App {
             "q" => {
                 self.should_quit = true;
             }
-            "pin" => {
+            "pin" | "p" => {
                 if let Some(pane_id) = self.selected_pane_id() {
                     self.tmux.set_pinned_pane(Some(&pane_id))?;
                     self.pinned_pane = Some(pane_id);
@@ -810,7 +810,7 @@ impl App {
                     self.status = String::from("pin requires pane selection");
                 }
             }
-            "unpin" => {
+            "unpin" | "up" => {
                 self.tmux.set_pinned_pane(None)?;
                 self.pinned_pane = None;
                 self.status = String::from("pane unpinned");
