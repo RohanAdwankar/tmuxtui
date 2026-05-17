@@ -73,6 +73,7 @@ impl Tmux {
     pub fn ensure_ready(&self) -> Result<()> {
         self.run_with_config(["start-server"])?;
         self.reload_config()?;
+        self.clear_stale_pane_options()?;
         Ok(())
     }
 
@@ -451,6 +452,26 @@ impl Tmux {
             "source-file",
             self.managed.tmux_conf.to_string_lossy().as_ref(),
         ])?;
+        Ok(())
+    }
+
+    fn clear_stale_pane_options(&self) -> Result<()> {
+        if self
+            .pinned_pane()
+            .as_deref()
+            .is_some_and(|pane_id| self.window_id_for_pane(pane_id).is_err())
+        {
+            self.set_pinned_pane(None)?;
+        }
+
+        if self
+            .option_value("@tmuxtui-pane")
+            .as_deref()
+            .is_some_and(|pane_id| self.window_id_for_pane(pane_id).is_err())
+        {
+            self.run(["set-option", "-gq", "@tmuxtui-pane", ""])?;
+        }
+
         Ok(())
     }
 
