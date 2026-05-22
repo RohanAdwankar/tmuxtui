@@ -183,8 +183,8 @@ setw -g aggressive-resize on
 set -g detach-on-destroy on
 set -g set-clipboard on
 set -g default-terminal "screen-256color"
-set -as terminal-features ",xterm-256color:RGB,screen-256color:RGB,tmux-256color:RGB"
-set -ga update-environment "NVIM"
+set -s terminal-features "xterm*:clipboard:ccolour:cstyle:focus:title:RGB,screen*:title:RGB,tmux-256color:RGB,rxvt*:ignorefkeys"
+set -g update-environment "DISPLAY KRB5CCNAME SSH_ASKPASS SSH_AUTH_SOCK SSH_AGENT_PID SSH_CONNECTION WINDOWID XAUTHORITY NVIM"
 "##,
     );
     tmux_conf.push_str(status_lines);
@@ -254,5 +254,17 @@ mod tests {
         assert!(tmux_conf.contains("@tmuxtui-window"));
         assert!(tmux_conf.contains("@tmuxtui-pane"));
         assert!(tmux_conf.contains("detach-client"));
+    }
+
+    #[test]
+    fn renders_idempotent_tmux_options() {
+        let tmux_conf = render_tmux_conf(&Settings::default());
+
+        assert!(tmux_conf.contains("set -s terminal-features"));
+        assert!(tmux_conf.contains("xterm*:clipboard:ccolour:cstyle:focus:title:RGB"));
+        assert!(tmux_conf.contains("screen*:title:RGB"));
+        assert!(tmux_conf.contains("set -g update-environment"));
+        assert!(!tmux_conf.contains("set -as terminal-features"));
+        assert!(!tmux_conf.contains("set -ga update-environment"));
     }
 }
