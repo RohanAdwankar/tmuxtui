@@ -9,6 +9,7 @@ RUN apt-get update \
         ca-certificates \
         ffmpeg \
         fonts-dejavu-core \
+        fonts-noto-core \
         procps \
         python3 \
         tmux \

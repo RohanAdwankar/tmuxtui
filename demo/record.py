@@ -36,6 +36,7 @@ COLS = 120
 ROWS = 34
 FPS = 12
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
+SYMBOL_CODES = (0x263C, 0x26B2)
 
 
 class Terminal:
@@ -105,6 +106,7 @@ class Renderer:
     def __init__(self) -> None:
         self.font = ImageFont.truetype(FONT, 16)
         self.bold = ImageFont.truetype(FONT, 16)
+        self.symbol_fonts: dict[str, ImageFont.FreeTypeFont] = {}
         box = self.font.getbbox("M")
         self.cw = box[2] - box[0]
         self.ch = 21
@@ -140,12 +142,47 @@ class Renderer:
                 if bg != "#1c1c1c":
                     draw.rectangle((x0, y0, x0 + self.cw, y0 + self.ch), fill=bg)
                 if cell.data and cell.data != " ":
-                    draw.text((x0, y0 + 2), cell.data, font=self.font, fill=fg)
+                    self.draw_cell(draw, x0, y0, cell.data, fg)
         cx = ox + screen.cursor.x * self.cw
         cy = oy + screen.cursor.y * self.ch + self.ch - 3
         draw.rectangle((cx, cy, cx + self.cw, cy + 1), fill="#eeeeee")
         image.save(FRAMES / f"{self.index:05}.png")
         self.index += 1
+
+    def draw_cell(self, draw: ImageDraw.ImageDraw, x: int, y: int, text: str, fill: str) -> None:
+        font = self.font_for(text)
+        if font is self.font:
+            draw.text((x, y + 2), text, font=font, fill=fill)
+            return
+
+        left, top, right, bottom = font.getbbox(text)
+        dx = max(0, (self.cw - (right - left)) // 2)
+        dy = max(0, (self.ch - (bottom - top)) // 2)
+        draw.text((x + dx - left, y + dy - top), text, font=font, fill=fill)
+
+    def font_for(self, text: str) -> ImageFont.FreeTypeFont:
+        if len(text) != 1 or ord(text) < 128:
+            return self.font
+        if text not in self.symbol_fonts:
+            self.symbol_fonts[text] = ImageFont.truetype(font_path_for(text), 16)
+        return self.symbol_fonts[text]
+
+
+def font_path_for(char: str) -> str:
+    result = subprocess.run(
+        ["fc-match", "-f", "%{file}", f":charset={ord(char):x}"],
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    path = result.stdout.strip()
+    if not path or not Path(path).exists():
+        raise FileNotFoundError(f"no font found for U+{ord(char):04X}")
+    return path
+
+
+def symbol_font_report() -> list[str]:
+    return [f"font_u+{code:04X}={font_path_for(chr(code))}" for code in SYMBOL_CODES]
 
 
 def ansi_color(value: object, default: str) -> str:
@@ -400,7 +437,7 @@ def verify_video() -> None:
     moving = sum(diff > 0.35 for diff in diffs)
     if not samples or bad or moving < max(3, len(diffs) // 4):
         raise RuntimeError("ffmpeg frame verification failed")
-    VERIFY.write_text("\n".join([f"video={VIDEO}", f"ffprobe={json.dumps(json.loads(ffprobe.stdout), sort_keys=True)}", f"samples={len(samples)}", f"min_contrast={min(item['contrast'] for item in stats):.2f}", f"min_colors={min(item['colors'] for item in stats)}", f"moving_pairs={moving}/{len(diffs)}", "ffmpeg_scan_stderr=", scan_text, ""]))
+    VERIFY.write_text("\n".join([f"video={VIDEO}", f"ffprobe={json.dumps(json.loads(ffprobe.stdout), sort_keys=True)}", *symbol_font_report(), f"samples={len(samples)}", f"min_contrast={min(item['contrast'] for item in stats):.2f}", f"min_colors={min(item['colors'] for item in stats)}", f"moving_pairs={moving}/{len(diffs)}", "ffmpeg_scan_stderr=", scan_text, ""]))
 
 
 def image_stats(path: Path) -> dict[str, float]:
