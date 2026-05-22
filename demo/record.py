@@ -210,6 +210,11 @@ def seed_tmux(env: dict[str, str]) -> None:
 
 def build_binary(env: dict[str, str]) -> Path:
     run(["cargo", "build", "--locked", "--bin", "tmuxtui"], env)
+    config_dir = Path(env["XDG_CONFIG_HOME"]) / "tmuxtui"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    (config_dir / "settings.conf").write_text(
+        "show_hints=false\nshow_status=true\nsidebar_percent=12\nsidebar_auto=true\n"
+    )
     binary = Path(env["CARGO_TARGET_DIR"]) / "debug" / "tmuxtui"
     run([str(binary), "--config"], env)
     return binary
@@ -225,11 +230,7 @@ def render_cli_prelude(renderer: Renderer) -> None:
 
 def walk(term: Terminal, renderer: Renderer) -> None:
     h = renderer.hold
-    h(term, "overview: session tree and live pane preview", 1.5)
-    term.command("showhints")
-    h(term, "command mode: show footer hints", 1.1)
-    term.command("sidebar 34")
-    h(term, "command mode: resize the tree and preview panes", 1.1)
+    h(term, "overview: minimal sidebar and live pane preview", 1.5)
     term.send("G")
     term.send("g")
     term.send("g")
@@ -348,10 +349,6 @@ def walk(term: Terminal, renderer: Renderer) -> None:
     h(term, "kill: D asks to remove the full window", 0.8)
     term.send("y")
     h(term, "kill: y confirms full-window removal", 0.8)
-    term.command("hidehints")
-    h(term, "command mode: hide footer hints", 0.8)
-    term.command("showhints")
-    h(term, "command mode: show footer hints", 0.8)
     term.command("hidestatus")
     h(term, "command mode: hide tmux status for attached sessions", 0.8)
     term.command("showstatus")
