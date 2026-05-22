@@ -87,6 +87,10 @@ impl Tmux {
         self.managed.settings().sidebar_percent
     }
 
+    pub fn sidebar_auto(&self) -> bool {
+        self.managed.settings().sidebar_auto
+    }
+
     pub fn snapshot(&self) -> Result<Snapshot> {
         let sessions_raw = self.run_or_empty([
             "list-sessions",
@@ -415,6 +419,11 @@ impl Tmux {
 
     pub fn set_sidebar_percent(&mut self, sidebar_percent: u8) -> Result<()> {
         self.managed.set_sidebar_percent(sidebar_percent)?;
+        Ok(())
+    }
+
+    pub fn set_sidebar_auto(&mut self) -> Result<()> {
+        self.managed.set_sidebar_auto()?;
         Ok(())
     }
 

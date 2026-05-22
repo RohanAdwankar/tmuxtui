@@ -26,6 +26,7 @@ pub struct DrawState<'a> {
     preview_text: String,
     footer: Vec<Action<'a>>,
     sidebar_percent: u8,
+    sidebar_auto: bool,
     show_hints: bool,
     filter: &'a str,
     input: &'a str,
@@ -91,12 +92,26 @@ impl<'a> DrawState<'a> {
             preview_text: app.preview.clone(),
             footer: app.actions(),
             sidebar_percent: app.sidebar_percent(),
+            sidebar_auto: app.sidebar_auto(),
             show_hints: app.show_hints(),
             filter: &app.filter,
             input: &app.input,
             status: &app.status,
             mode: &app.mode,
         }
+    }
+
+    fn auto_sidebar_width(&self, area_width: u16) -> u16 {
+        let widest = self
+            .tree_lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.chars().count())
+            .max()
+            .unwrap_or(0) as u16;
+        widest
+            .saturating_add(1)
+            .clamp(8, area_width.saturating_sub(20).max(8))
     }
 }
 
@@ -106,20 +121,30 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
         .constraints([Constraint::Min(1), Constraint::Length(2)])
         .split(frame.area());
 
-    match state.sidebar_percent {
-        0 => draw_preview(frame, outer[0], state),
-        100 => draw_tree(frame, outer[0], state),
-        percent => {
-            let main = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(percent as u16),
-                    Constraint::Percentage((100 - percent) as u16),
-                ])
-                .split(outer[0]);
+    if state.sidebar_auto {
+        let width = state.auto_sidebar_width(outer[0].width);
+        let main = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Length(width), Constraint::Min(1)])
+            .split(outer[0]);
+        draw_tree(frame, main[0], state);
+        draw_preview(frame, main[1], state);
+    } else {
+        match state.sidebar_percent {
+            0 => draw_preview(frame, outer[0], state),
+            100 => draw_tree(frame, outer[0], state),
+            percent => {
+                let main = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(percent as u16),
+                        Constraint::Percentage((100 - percent) as u16),
+                    ])
+                    .split(outer[0]);
 
-            draw_tree(frame, main[0], state);
-            draw_preview(frame, main[1], state);
+                draw_tree(frame, main[0], state);
+                draw_preview(frame, main[1], state);
+            }
         }
     }
     draw_footer(frame, outer[1], state);
@@ -385,6 +410,38 @@ mod tests {
     fn session_label_places_marker_after_name() {
         assert_eq!(session_label("node", false), "node");
         assert_eq!(session_label("node", true), "node ☼");
+    }
+
+    #[test]
+    fn auto_sidebar_width_fits_visible_tree_labels() {
+        let managed = ManagedConfig::bootstrap().expect("config");
+        let mut app = App::new(Tmux::new(managed));
+        app.snapshot = Snapshot {
+            sessions: vec![Session {
+                id: String::from("$1"),
+                name: String::from("long-session"),
+                attached: false,
+                windows: vec![Window {
+                    id: String::from("@1"),
+                    name: String::from("build"),
+                    active: true,
+                    session_id: String::from("$1"),
+                    panes: vec![Pane {
+                        id: String::from("%1"),
+                        current_command: String::from("zsh"),
+                        current_path: String::from("/tmp"),
+                        active: true,
+                        zoomed: false,
+                        window_id: String::from("@1"),
+                    }],
+                }],
+            }],
+        };
+
+        let state = super::DrawState::from_app(&app);
+
+        assert_eq!(state.auto_sidebar_width(120), 13);
+        assert_eq!(state.auto_sidebar_width(24), 8);
     }
 
     #[test]

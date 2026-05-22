@@ -963,13 +963,18 @@ impl App {
             }
             _ if command.starts_with("sidebar ") => {
                 let value = command["sidebar ".len()..].trim();
-                match value.parse::<u8>() {
-                    Ok(percent) => {
-                        self.tmux.set_sidebar_percent(percent)?;
-                        self.status = format!("sidebar {}", percent.min(100));
-                    }
-                    Err(_) => {
-                        self.status = String::from("sidebar expects 0-100");
+                if value == "a" {
+                    self.tmux.set_sidebar_auto()?;
+                    self.status = String::from("sidebar auto");
+                } else {
+                    match value.parse::<u8>() {
+                        Ok(percent) => {
+                            self.tmux.set_sidebar_percent(percent)?;
+                            self.status = format!("sidebar {}", percent.min(100));
+                        }
+                        Err(_) => {
+                            self.status = String::from("sidebar expects a or 0-100");
+                        }
                     }
                 }
             }
@@ -1797,6 +1802,10 @@ impl App {
 
     pub fn sidebar_percent(&self) -> u8 {
         self.tmux.sidebar_percent()
+    }
+
+    pub fn sidebar_auto(&self) -> bool {
+        self.tmux.sidebar_auto()
     }
 
     fn push_count_digit(&mut self, digit: usize) {
@@ -2941,6 +2950,19 @@ mod tests {
                 session_id: String::from("$1")
             })
         );
+    }
+
+    #[test]
+    fn sidebar_a_enables_auto_sidebar() {
+        let mut app = test_app();
+
+        app.execute_command("sidebar a").expect("sidebar auto");
+        assert!(app.sidebar_auto());
+        assert_eq!(app.status, "sidebar auto");
+
+        app.execute_command("sidebar 20").expect("sidebar percent");
+        assert!(!app.sidebar_auto());
+        assert_eq!(app.sidebar_percent(), 20);
     }
 
     fn test_app() -> App {

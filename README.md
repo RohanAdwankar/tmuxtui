@@ -73,6 +73,8 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | `:showhints` | show footer hints again |
 | `:hidestatus` | hide tmux's in-session status line |
 | `:showstatus` | show tmux's in-session status line |
+| `:sidebar a` | auto-size the sidebar to the visible tree |
+| `:sidebar 0-100` | set the sidebar width percentage |
 
 ## Naming Behavior
 
