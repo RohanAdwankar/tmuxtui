@@ -26,6 +26,7 @@ pub enum InputMode {
     Command,
     Filter,
     Search,
+    Picker,
     Prompt(PromptKind),
     Confirm(ConfirmAction),
 }
@@ -110,6 +111,13 @@ enum PasteIntent {
     },
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PanePickerEntry {
+    pub(crate) selection: Selection,
+    pub(crate) label: String,
+    pub(crate) preview: String,
+}
+
 pub struct App {
     tmux: Tmux,
     pub(crate) snapshot: Snapshot,
@@ -120,6 +128,8 @@ pub struct App {
     pub(crate) search: String,
     pub(crate) input: String,
     pub(crate) preview: String,
+    pub(crate) picker_entries: Vec<PanePickerEntry>,
+    pub(crate) picker_index: usize,
     pub(crate) status: String,
     pub(crate) pinned_pane: Option<String>,
     pub(crate) caffeinated_targets: HashSet<String>,
@@ -145,6 +155,8 @@ impl App {
             search: String::new(),
             input: String::new(),
             preview: String::new(),
+            picker_entries: Vec::new(),
+            picker_index: 0,
             status: String::new(),
             pinned_pane: None,
             caffeinated_targets: HashSet::new(),
@@ -195,6 +207,7 @@ impl App {
             InputMode::Command => self.handle_command(key),
             InputMode::Filter => self.handle_filter(key),
             InputMode::Search => self.handle_search(key),
+            InputMode::Picker => self.handle_picker(key),
             InputMode::Prompt(kind) => self.handle_prompt(key, kind),
             InputMode::Confirm(action) => self.handle_confirm(key, action),
         };
@@ -238,6 +251,29 @@ impl App {
                     self.search = self.input.clone();
                     self.search_match(true, true);
                     self.refresh_preview()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_picker(&mut self, key: KeyEvent) -> Result<()> {
+        match key.code {
+            KeyCode::Enter => {
+                if self.select_picker_entry() {
+                    self.attach_selected()?;
+                }
+            }
+            KeyCode::Esc => {
+                self.mode = InputMode::Normal;
+                self.input.clear();
+                self.refresh_preview()?;
+            }
+            KeyCode::Char('j') | KeyCode::Down => self.move_picker(1),
+            KeyCode::Char('k') | KeyCode::Up => self.move_picker(-1),
+            _ => {
+                if self.handle_text_input(key, false) {
+                    self.clamp_picker_index();
                 }
             }
         }
@@ -339,6 +375,10 @@ impl App {
             KeyCode::Char('x') => {
                 self.clear_count();
                 self.cut_selected();
+            }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.clear_count();
+                self.start_picker()?;
             }
             KeyCode::Char('p') => {
                 self.clear_count();
@@ -1057,6 +1097,43 @@ impl App {
         Ok(())
     }
 
+    fn start_picker(&mut self) -> Result<()> {
+        self.input.clear();
+        self.picker_index = 0;
+        self.picker_entries = self.capture_picker_entries()?;
+        self.mode = InputMode::Picker;
+        if self.picker_entries.is_empty() {
+            self.status = String::from("no panes");
+        }
+        Ok(())
+    }
+
+    fn capture_picker_entries(&self) -> Result<Vec<PanePickerEntry>> {
+        let mut entries = Vec::new();
+        for (session_idx, session) in self.snapshot.sessions.iter().enumerate() {
+            for (window_idx, window) in session.windows.iter().enumerate() {
+                for (pane_idx, pane) in window.panes.iter().enumerate() {
+                    entries.push(PanePickerEntry {
+                        selection: if pane_idx == 0 && self.should_show_windows(session) {
+                            Selection::Window(session_idx, window_idx)
+                        } else {
+                            Selection::Pane(session_idx, window_idx, pane_idx)
+                        },
+                        label: format!(
+                            "{} / {} / {} / {}",
+                            session.name,
+                            window.name,
+                            pane_label(pane_idx),
+                            pane.current_path
+                        ),
+                        preview: self.tmux.capture_pane(&pane.id)?,
+                    });
+                }
+            }
+        }
+        Ok(entries)
+    }
+
     fn move_selection(&mut self, delta: isize) {
         let visible = self.visible_rows();
         if visible.is_empty() {
@@ -1076,6 +1153,53 @@ impl App {
             (current + delta as usize).min(visible.len().saturating_sub(1))
         };
         self.selection = Some(visible[next].clone());
+    }
+
+    fn move_picker(&mut self, delta: isize) {
+        let len = self.filtered_picker_entries().len();
+        if len == 0 {
+            self.picker_index = 0;
+            return;
+        }
+        self.picker_index = if delta.is_negative() {
+            self.picker_index.saturating_sub(delta.unsigned_abs())
+        } else {
+            (self.picker_index + delta as usize).min(len.saturating_sub(1))
+        };
+    }
+
+    fn clamp_picker_index(&mut self) {
+        let len = self.filtered_picker_entries().len();
+        self.picker_index = self.picker_index.min(len.saturating_sub(1));
+    }
+
+    pub(crate) fn filtered_picker_entries(&self) -> Vec<&PanePickerEntry> {
+        let needle = self.input.to_lowercase();
+        self.picker_entries
+            .iter()
+            .filter(|entry| {
+                needle.is_empty()
+                    || entry.label.to_lowercase().contains(&needle)
+                    || entry.preview.to_lowercase().contains(&needle)
+            })
+            .collect()
+    }
+
+    pub(crate) fn selected_picker_entry(&self) -> Option<&PanePickerEntry> {
+        self.filtered_picker_entries()
+            .get(self.picker_index)
+            .copied()
+    }
+
+    fn select_picker_entry(&mut self) -> bool {
+        let Some(entry) = self.selected_picker_entry().cloned() else {
+            return false;
+        };
+        self.selection = Some(entry.selection);
+        self.mode = InputMode::Normal;
+        self.input.clear();
+        self.preview = entry.preview;
+        true
     }
 
     fn jump_to_index(&mut self, target: usize) {
@@ -1771,6 +1895,7 @@ impl App {
             Action::new("enter", "attach"),
             Action::new(":", "command"),
             Action::new("j/k", "move"),
+            Action::new("^p", "picker"),
             Action::new("/", "search"),
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
@@ -1792,6 +1917,9 @@ impl App {
                 Action::new("enter", "confirm"),
                 Action::new("esc", "cancel"),
             ];
+            if matches!(self.mode, InputMode::Picker) {
+                actions.insert(1, Action::new("j/k", "move"));
+            }
         }
         actions
     }
@@ -1914,8 +2042,8 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        App, ArchiveTarget, ConfirmAction, CreateIntent, CutTarget, InputMode, PasteIntent,
-        Selection, SelectionKey, pane_label,
+        App, ArchiveTarget, ConfirmAction, CreateIntent, CutTarget, InputMode, PanePickerEntry,
+        PasteIntent, Selection, SelectionKey, pane_label,
     };
     use crate::{
         managed_config::ManagedConfig,
@@ -2546,6 +2674,56 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
 
         assert_eq!(app.mode, InputMode::Filter);
+    }
+
+    #[test]
+    fn picker_filters_labels_and_previews() {
+        let mut app = test_app();
+        app.input = String::from("cargo");
+        app.picker_entries = vec![
+            PanePickerEntry {
+                selection: Selection::Window(0, 0),
+                label: String::from("dev / editor / 1 / /repo"),
+                preview: String::from("vim src/main.rs"),
+            },
+            PanePickerEntry {
+                selection: Selection::Window(0, 1),
+                label: String::from("dev / build / 1 / /repo"),
+                preview: String::from("cargo test"),
+            },
+        ];
+
+        let matches = app.filtered_picker_entries();
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].selection, Selection::Window(0, 1));
+    }
+
+    #[test]
+    fn picker_enter_selects_matching_pane() {
+        let mut app = test_app();
+        app.snapshot = snapshot_with_windows(&[("@1", "editor", true), ("@2", "build", false)]);
+        app.mode = InputMode::Picker;
+        app.input = String::from("build");
+        app.picker_entries = vec![
+            PanePickerEntry {
+                selection: Selection::Window(0, 0),
+                label: String::from("dev / editor / 1 / /repo"),
+                preview: String::from("vim src/main.rs"),
+            },
+            PanePickerEntry {
+                selection: Selection::Window(0, 1),
+                label: String::from("dev / build / 1 / /repo"),
+                preview: String::from("cargo test"),
+            },
+        ];
+
+        assert!(app.select_picker_entry());
+
+        assert_eq!(app.selection, Some(Selection::Window(0, 1)));
+        assert_eq!(app.mode, InputMode::Normal);
+        assert!(app.input.is_empty());
+        assert_eq!(app.preview, "cargo test");
     }
 
     #[test]

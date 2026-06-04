@@ -22,6 +22,8 @@ impl<'a> Action<'a> {
 
 pub struct DrawState<'a> {
     tree_lines: Vec<Line<'a>>,
+    picker_lines: Vec<Line<'a>>,
+    picker_preview: String,
     preview_status: String,
     preview_text: String,
     footer: Vec<Action<'a>>,
@@ -85,9 +87,23 @@ impl<'a> DrawState<'a> {
                 }
             }
         }
+        let picker_entries = app.filtered_picker_entries();
+        let picker_lines = picker_entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                styled_line(entry.label.clone(), index == app.picker_index, false, false)
+            })
+            .collect();
+        let picker_preview = app
+            .selected_picker_entry()
+            .map(|entry| entry.preview.clone())
+            .unwrap_or_else(|| String::from("No matching panes"));
 
         Self {
             tree_lines,
+            picker_lines,
+            picker_preview,
             preview_status: preview_status(app),
             preview_text: app.preview.clone(),
             footer: app.actions(),
@@ -148,6 +164,9 @@ pub fn draw(frame: &mut Frame<'_>, state: &DrawState<'_>) {
         }
     }
     draw_footer(frame, outer[1], state);
+    if matches!(state.mode, InputMode::Picker) {
+        draw_picker(frame, outer[0], state);
+    }
 }
 
 fn draw_tree(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
@@ -172,6 +191,50 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 
     frame.render_widget(status, sections[0]);
     frame.render_widget(preview, sections[1]);
+}
+
+fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
+    let area = centered_rect(area, 86, 80);
+    frame.render_widget(Clear, area);
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(area);
+    let body = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+        .split(sections[1]);
+    let prompt = Paragraph::new(format!("picker: {}", current_input(state)))
+        .style(Style::default().bg(Color::Indexed(236)).fg(Color::White))
+        .wrap(Wrap { trim: false });
+    let results = Paragraph::new(Text::from(state.picker_lines.clone()))
+        .style(Style::default().bg(Color::Indexed(236)))
+        .wrap(Wrap { trim: false });
+    let preview = Paragraph::new(state.picker_preview.clone())
+        .style(Style::default().bg(Color::Indexed(234)));
+
+    frame.render_widget(prompt, sections[0]);
+    frame.render_widget(results, body[0]);
+    frame.render_widget(preview, body[1]);
+}
+
+fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
 }
 
 fn draw_footer(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
@@ -207,6 +270,7 @@ fn current_input(state: &DrawState<'_>) -> String {
         InputMode::Prompt(_) => state.input.to_owned(),
         InputMode::Filter => state.filter.to_owned(),
         InputMode::Search => state.input.to_owned(),
+        InputMode::Picker => state.input.to_owned(),
         _ => String::new(),
     }
 }
@@ -219,6 +283,7 @@ fn command_message(state: &DrawState<'_>) -> Option<String> {
         InputMode::Filter => Some(format!("f{}", current_input(state))),
         InputMode::Search if state.show_hints => Some(format!("search: {}", current_input(state))),
         InputMode::Search => Some(format!("/{}", current_input(state))),
+        InputMode::Picker => None,
         InputMode::Prompt(kind) => {
             Some(format!("{}: {}", prompt_label(kind), current_input(state)))
         }
