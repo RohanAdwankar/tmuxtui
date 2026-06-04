@@ -151,8 +151,8 @@ class Renderer:
 
     def draw_cell(self, draw: ImageDraw.ImageDraw, x: int, y: int, text: str, fill: str) -> None:
         font = self.font_for(text)
-        if font is self.font:
-            draw.text((x, y + 2), text, font=font, fill=fill)
+        if font is self.font or is_box_drawing(text):
+            draw.text((x, y + 2), text, font=self.font, fill=fill)
             return
 
         left, top, right, bottom = font.getbbox(text)
@@ -166,6 +166,10 @@ class Renderer:
         if text not in self.symbol_fonts:
             self.symbol_fonts[text] = ImageFont.truetype(font_path_for(text), 16)
         return self.symbol_fonts[text]
+
+
+def is_box_drawing(text: str) -> bool:
+    return len(text) == 1 and 0x2500 <= ord(text) <= 0x257F
 
 
 def font_path_for(char: str) -> str:
@@ -237,6 +241,8 @@ def tmux(env: dict[str, str], *args: str, check: bool = True) -> subprocess.Comp
 def seed_tmux(env: dict[str, str]) -> None:
     tmux(env, "kill-server", check=False)
     tmux(env, "new-session", "-d", "-s", "api", "-n", "logs", "-c", "/work", "bash -lc 'printf \"api service\\nGET /health 200\\nGET /v1/jobs 200\\n\"; while sleep 4; do printf \"worker synced queue\\n\"; done'")
+    tmux(env, "set-option", "-g", "pane-border-style", "fg=colour245")
+    tmux(env, "set-option", "-g", "pane-active-border-style", "fg=colour245")
     tmux(env, "split-window", "-h", "-t", "api:logs", "-c", "/work", "bash -lc 'printf \"request stream\\nPOST /v1/jobs 202\\ncache hit user:42\\n\"; while sleep 5; do printf \"poll complete\\n\"; done'")
     tmux(env, "new-window", "-t", "api", "-n", "console", "-c", "/work", "bash -lc 'printf \"curl http://localhost:8080/health\\n{status: ok}\\n\"; exec bash -i'")
     tmux(env, "new-session", "-d", "-s", "docs", "-n", "readme", "-c", "/work", "bash -lc 'sed -n \"1,70p\" README.md; exec bash -i'")
