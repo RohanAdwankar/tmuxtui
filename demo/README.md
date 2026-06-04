@@ -6,4 +6,4 @@
 - `demo/out/frame-checks/`
 - `demo/out/verification.txt`
 
-The recorder drives the real TUI through a pseudo terminal, renders decoded terminal frames, encodes them with ffmpeg, then uses ffmpeg-extracted frames for a nonblank and motion check.
+The recorder builds an isolated tmux server, opens `tmuxtui` in xterm under Xvfb, drives the window with xdotool, records the X display with ffmpeg, then checks extracted frames for contrast and motion.

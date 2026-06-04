@@ -13,6 +13,9 @@ RUN apt-get update \
         procps \
         python3 \
         tmux \
+        xdotool \
+        xterm \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CARGO_TARGET_DIR=/tmp/tmuxtui-target \
