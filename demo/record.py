@@ -90,6 +90,8 @@ class ScreenRecording:
         self.env["DISPLAY"] = DISPLAY
         self.binary = binary
         self.procs: list[subprocess.Popen[str]] = []
+        self.keycast_path = Path(env["HOME"]).parent / "keys.txt"
+        self.keycast_path.write_text("")
         self.window = ""
 
     def start(self) -> None:
@@ -115,6 +117,8 @@ class ScreenRecording:
             ]
         )
         self.window = self._find_window()
+        self._spawn_keycast()
+        self.focus()
         self.procs.append(
             subprocess.Popen(
                 [
@@ -148,6 +152,40 @@ class ScreenRecording:
         self.procs.append(proc)
         return proc
 
+    def _spawn_keycast(self) -> None:
+        script = f"""
+printf '\033[?25l'
+while true; do
+  printf '\033[2J\033[Hkeys: '
+  cat {self.keycast_path}
+  sleep 0.08
+done
+"""
+        self._spawn(
+            [
+                "xterm",
+                "-geometry",
+                "34x2+845+20",
+                "-fa",
+                "DejaVu Sans Mono",
+                "-fs",
+                "15",
+                "-bg",
+                "#202020",
+                "-fg",
+                "#eeeeee",
+                "-bd",
+                "#202020",
+                "-xrm",
+                "XTerm.vt100.scrollBar: false",
+                "-e",
+                "bash",
+                "-lc",
+                script,
+            ]
+        )
+        time.sleep(0.2)
+
     def _wait_for_display(self) -> None:
         for _ in range(80):
             if run(["xdotool", "getdisplaygeometry"], self.env, check=False).returncode == 0:
@@ -168,13 +206,18 @@ class ScreenRecording:
         run(["xdotool", "windowactivate", "--sync", self.window], self.env, check=False)
         run(["xdotool", "windowfocus", "--sync", self.window], self.env, check=False)
 
+    def show_keys(self, value: str) -> None:
+        self.keycast_path.write_text(value)
+
     def key(self, *keys: str, pause: float = 0.22) -> None:
+        self.show_keys(" ".join(display_key(key) for key in keys))
         self.focus()
         for key in keys:
             run(["xdotool", "key", key], self.env)
         time.sleep(pause)
 
     def text(self, value: str, pause: float = 0.04) -> None:
+        self.show_keys(value)
         self.focus()
         run(["xdotool", "type", "--delay", str(round(pause * 1000)), "--", value], self.env)
         time.sleep(0.15)
@@ -198,6 +241,22 @@ class ScreenRecording:
                     proc.wait(timeout=4)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+
+
+def display_key(key: str) -> str:
+    labels = {
+        "BackSpace": "Backspace",
+        "Down": "Down",
+        "Escape": "Esc",
+        "Return": "Enter",
+        "Tab": "Tab",
+        "colon": ":",
+        "slash": "/",
+        "space": "Space",
+    }
+    if key.startswith("ctrl+"):
+        return "Ctrl-" + key[5:]
+    return labels.get(key, key)
 
 
 def walk(term: ScreenRecording) -> None:
