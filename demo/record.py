@@ -262,7 +262,6 @@ def display_key(key: str) -> str:
         "Down": "Down",
         "Escape": "Esc",
         "Return": "Enter",
-        "Tab": "Tab",
         "colon": ":",
         "slash": "/",
         "space": "Space",

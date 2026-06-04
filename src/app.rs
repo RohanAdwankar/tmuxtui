@@ -15,12 +15,6 @@ use crate::{
 const TICK_RATE: Duration = Duration::from_millis(200);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Focus {
-    Tree,
-    Preview,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
     Command,
@@ -122,7 +116,6 @@ pub struct App {
     tmux: Tmux,
     pub(crate) snapshot: Snapshot,
     pub(crate) selection: Option<Selection>,
-    pub(crate) focus: Focus,
     pub(crate) mode: InputMode,
     pub(crate) filter: String,
     pub(crate) search: String,
@@ -151,7 +144,6 @@ impl App {
                 sessions: Vec::new(),
             },
             selection: None,
-            focus: Focus::Tree,
             mode: InputMode::Normal,
             filter: String::new(),
             search: String::new(),
@@ -376,10 +368,6 @@ impl App {
                 let count = self.take_count() as isize;
                 self.move_selection(-count);
             }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.clear_count();
-                self.focus = Focus::Tree;
-            }
             KeyCode::Char('g') => {
                 self.pending_g = true;
             }
@@ -424,14 +412,6 @@ impl App {
                     self.clear_count();
                     self.jump_to_index(last);
                 }
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.clear_count();
-                self.focus = Focus::Preview;
-            }
-            KeyCode::Tab => {
-                self.clear_count();
-                self.toggle_focus();
             }
             KeyCode::Enter => {
                 self.clear_count();
@@ -620,13 +600,6 @@ impl App {
             }
             _ => false,
         }
-    }
-
-    fn toggle_focus(&mut self) {
-        self.focus = match self.focus {
-            Focus::Tree => Focus::Preview,
-            Focus::Preview => Focus::Tree,
-        };
     }
 
     fn start_child_create(&mut self) -> Result<()> {
@@ -1937,7 +1910,6 @@ impl App {
             Action::new("a/A", "archive"),
             Action::new("s/S", "split"),
             Action::new("z", "zoom"),
-            Action::new("tab", "focus"),
             Action::new("^q", "leave tmux"),
             Action::new("q", "quit"),
         ];
