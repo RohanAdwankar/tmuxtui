@@ -830,13 +830,16 @@ fn parse_panes(raw: &str) -> Vec<Pane> {
             let window_id = parts.next()?.to_owned();
             let id = parts.next()?.to_owned();
             parts.next()?;
+            let current_command = parts.next()?.to_owned();
+            let current_path = parts.next()?.to_owned();
+            let active = parts.next()? == "1";
             Some(Pane {
                 window_id,
                 id,
-                current_command: parts.next()?.to_owned(),
-                current_path: parts.next()?.to_owned(),
-                active: parts.next()? == "1",
-                zoomed: parts.next()? == "1",
+                current_command,
+                current_path,
+                active,
+                zoomed: active && parts.next()? == "1",
             })
         })
         .collect()
@@ -870,6 +873,14 @@ mod tests {
         assert_eq!(panes[0].current_path, "/Users/me/project");
         assert!(panes[0].active);
         assert!(!panes[0].zoomed);
+    }
+
+    #[test]
+    fn zoomed_window_marks_only_active_pane() {
+        let panes = parse_panes("@1\t%1\tmain\tzsh\t/tmp\t0\t1\n@1\t%2\tmain\tzsh\t/tmp\t1\t1\n");
+
+        assert!(!panes[0].zoomed);
+        assert!(panes[1].zoomed);
     }
 
     #[test]
