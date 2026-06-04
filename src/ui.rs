@@ -196,10 +196,18 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let area = centered_rect(area, 88, 82);
     frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new("").style(Style::default().bg(Color::Indexed(240))),
+        area,
+    );
+    let inner = area.inner(ratatui::layout::Margin {
+        horizontal: 1,
+        vertical: 1,
+    });
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1)])
-        .split(area);
+        .split(inner);
     let body = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
