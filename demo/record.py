@@ -222,21 +222,21 @@ done
         expires = round(time.time() * 1000) + 1000
         self.keycast_path.write_text(f"{expires} {shown}")
 
-    def key(self, *keys: str, pause: float = 0.22) -> None:
+    def key(self, *keys: str, pause: float = 0.35) -> None:
         self.show_keys(" ".join(display_key(key) for key in keys), append=True)
         self.focus()
         for key in keys:
             run(["xdotool", "key", key], self.env)
         time.sleep(pause)
 
-    def text(self, value: str, pause: float = 0.04) -> None:
+    def text(self, value: str, pause: float = 0.08) -> None:
         self.show_keys(value, append=True)
         self.focus()
         run(["xdotool", "type", "--delay", str(round(pause * 1000)), "--", value], self.env)
-        time.sleep(0.15)
+        time.sleep(0.25)
 
     def hold(self, seconds: float = 1.0) -> None:
-        time.sleep(seconds)
+        time.sleep(seconds * 1.25)
 
     def backspace(self, count: int = 30) -> None:
         self.key(*(["BackSpace"] * count), pause=0.05)
@@ -385,33 +385,26 @@ def walk(term: ScreenRecording) -> None:
     h(0.9)
     term.command("pin")
     h(1.0)
-    term.key("f")
-    term.key("Escape")
-    h(0.5)
-    term.key("f")
-    term.text("ops")
-    term.key("Return")
-    term.key("g")
-    term.key("g")
-    h(0.8)
-    term.key("Return")
-    h(1.0)
-    term.key("ctrl+q")
-    h(0.8)
-    term.key("f")
-    term.key("Escape")
-    term.key("f")
-    term.text("docs")
-    term.key("Return")
-    term.key("g")
-    term.key("g")
-    h(0.8)
-    term.key("Return")
-    h(1.0)
-    term.key("ctrl+q")
-    h(0.8)
     term.key("j")
+    h(0.8)
+    term.key("Return")
+    h(1.2)
+    term.key("ctrl+q")
+    h(0.9)
     term.key("j")
+    h(0.8)
+    term.key("Return")
+    h(1.2)
+    term.key("ctrl+q")
+    h(0.9)
+    for _ in range(6):
+        term.key("j")
+        h(0.18)
+    h(0.8)
+    term.key("Return")
+    h(1.2)
+    term.key("ctrl+q")
+    h(0.9)
     term.command("unpin")
     h(0.9)
     term.key("a")
