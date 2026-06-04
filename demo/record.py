@@ -92,6 +92,7 @@ class ScreenRecording:
         self.procs: list[subprocess.Popen[str]] = []
         self.keycast_path = Path(env["HOME"]).parent / "keys.txt"
         self.keycast_path.write_text("")
+        self.keycast_until = 0.0
         self.window = ""
 
     def start(self) -> None:
@@ -156,8 +157,11 @@ class ScreenRecording:
         script = f"""
 printf '\033[?25l'
 while true; do
-  printf '\033[2J\033[Hkeys: '
-  cat {self.keycast_path}
+  now=$(date +%s%3N)
+  exp=$(cut -d' ' -f1 {self.keycast_path} 2>/dev/null)
+  text=$(cut -d' ' -f2- {self.keycast_path} 2>/dev/null)
+  [ -n "$exp" ] && [ "$now" -le "$exp" ] || text=
+  printf '\033[2J\033[Hkeys: %s' "$text"
   sleep 0.08
 done
 """
@@ -165,7 +169,7 @@ done
             [
                 "xterm",
                 "-geometry",
-                "34x2+845+20",
+                "34x2+845+724",
                 "-fa",
                 "DejaVu Sans Mono",
                 "-fs",
@@ -206,18 +210,27 @@ done
         run(["xdotool", "windowactivate", "--sync", self.window], self.env, check=False)
         run(["xdotool", "windowfocus", "--sync", self.window], self.env, check=False)
 
-    def show_keys(self, value: str) -> None:
-        self.keycast_path.write_text(value)
+    def show_keys(self, value: str, append: bool = False) -> None:
+        now = time.monotonic()
+        shown = ""
+        if append and now < self.keycast_until:
+            parts = self.keycast_path.read_text().split(" ", 1)
+            shown = parts[1] if len(parts) == 2 else ""
+        sep = "" if not shown or len(value) == 1 else " "
+        shown = f"{shown}{sep}{value}"
+        self.keycast_until = now + 1.0
+        expires = round(time.time() * 1000) + 1000
+        self.keycast_path.write_text(f"{expires} {shown}")
 
     def key(self, *keys: str, pause: float = 0.22) -> None:
-        self.show_keys(" ".join(display_key(key) for key in keys))
+        self.show_keys(" ".join(display_key(key) for key in keys), append=True)
         self.focus()
         for key in keys:
             run(["xdotool", "key", key], self.env)
         time.sleep(pause)
 
     def text(self, value: str, pause: float = 0.04) -> None:
-        self.show_keys(value)
+        self.show_keys(value, append=True)
         self.focus()
         run(["xdotool", "type", "--delay", str(round(pause * 1000)), "--", value], self.env)
         time.sleep(0.15)
@@ -245,7 +258,7 @@ done
 
 def display_key(key: str) -> str:
     labels = {
-        "BackSpace": "Backspace",
+        "BackSpace": "⌫",
         "Down": "Down",
         "Escape": "Esc",
         "Return": "Enter",
