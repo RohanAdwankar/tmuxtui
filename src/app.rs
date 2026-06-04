@@ -139,6 +139,8 @@ pub struct App {
     cut_target: Option<CutTarget>,
     count_prefix: Option<usize>,
     pending_g: bool,
+    pending_space: bool,
+    pending_space_f: bool,
 }
 
 impl App {
@@ -166,6 +168,8 @@ impl App {
             cut_target: None,
             count_prefix: None,
             pending_g: false,
+            pending_space: false,
+            pending_space_f: false,
         }
     }
 
@@ -269,8 +273,14 @@ impl App {
                 self.input.clear();
                 self.refresh_preview()?;
             }
-            KeyCode::Char('j') | KeyCode::Down => self.move_picker(1),
-            KeyCode::Char('k') | KeyCode::Up => self.move_picker(-1),
+            KeyCode::Down => self.move_picker(1),
+            KeyCode::Up => self.move_picker(-1),
+            KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_picker(1);
+            }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.move_picker(-1);
+            }
             _ => {
                 if self.handle_text_input(key, false) {
                     self.clamp_picker_index();
@@ -301,6 +311,23 @@ impl App {
     }
 
     fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
+        if self.pending_space_f {
+            self.pending_space_f = false;
+            self.pending_space = false;
+            if matches!(key.code, KeyCode::Char('g')) {
+                self.clear_count();
+                self.start_picker()?;
+            }
+            return Ok(());
+        }
+        if self.pending_space {
+            self.pending_space = false;
+            if matches!(key.code, KeyCode::Char('f')) {
+                self.pending_space_f = true;
+            }
+            return Ok(());
+        }
+
         if self.pending_g {
             self.pending_g = false;
             match key.code {
@@ -326,6 +353,10 @@ impl App {
             KeyCode::Char('q') => {
                 self.clear_count();
                 self.should_quit = true;
+            }
+            KeyCode::Char(' ') => {
+                self.clear_count();
+                self.pending_space = true;
             }
             KeyCode::Char('n') => {
                 self.clear_count();
@@ -375,10 +406,6 @@ impl App {
             KeyCode::Char('x') => {
                 self.clear_count();
                 self.cut_selected();
-            }
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.clear_count();
-                self.start_picker()?;
             }
             KeyCode::Char('p') => {
                 self.clear_count();
@@ -459,6 +486,8 @@ impl App {
             }
             _ => {
                 self.pending_g = false;
+                self.pending_space = false;
+                self.pending_space_f = false;
                 self.clear_count();
             }
         }
@@ -1895,7 +1924,7 @@ impl App {
             Action::new("enter", "attach"),
             Action::new(":", "command"),
             Action::new("j/k", "move"),
-            Action::new("^p", "picker"),
+            Action::new("space fg", "picker"),
             Action::new("/", "search"),
             Action::new("n/N", "next/prev"),
             Action::new("f", "filter"),
@@ -1918,7 +1947,7 @@ impl App {
                 Action::new("esc", "cancel"),
             ];
             if matches!(self.mode, InputMode::Picker) {
-                actions.insert(1, Action::new("j/k", "move"));
+                actions.insert(1, Action::new("up/down", "move"));
             }
         }
         actions
@@ -2697,6 +2726,28 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].selection, Selection::Window(0, 1));
+    }
+
+    #[test]
+    fn space_f_g_enters_picker_mode() {
+        let mut app = test_app();
+
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE));
+
+        assert_eq!(app.mode, InputMode::Picker);
+    }
+
+    #[test]
+    fn picker_keeps_j_and_k_as_query_text() {
+        let mut app = test_app();
+        app.mode = InputMode::Picker;
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+        app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
+
+        assert_eq!(app.input, "jk");
     }
 
     #[test]
