@@ -63,7 +63,7 @@ def seed_tmux(env: dict[str, str]) -> None:
     tmux(env, "kill-server", check=False)
     tmux(env, "new-session", "-d", "-s", "api", "-n", "logs", "-c", "/work", "bash -lc 'printf \"api service\\nGET /health 200\\nGET /v1/jobs 200\\n\"; while sleep 4; do printf \"worker synced queue\\n\"; done'")
     tmux(env, "set-option", "-g", "pane-border-style", "fg=colour245")
-    tmux(env, "set-option", "-g", "pane-active-border-style", "fg=colour245")
+    tmux(env, "set-option", "-g", "pane-active-border-style", "fg=colour34")
     tmux(env, "split-window", "-h", "-t", "api:logs", "-c", "/work", "bash -lc 'printf \"request stream\\nPOST /v1/jobs 202\\ncache hit user:42\\n\"; while sleep 5; do printf \"poll complete\\n\"; done'")
     tmux(env, "new-window", "-t", "api", "-n", "console", "-c", "/work", "bash -lc 'printf \"curl http://localhost:8080/health\\n{status: ok}\\n\"; exec bash -i'")
     tmux(env, "new-session", "-d", "-s", "docs", "-n", "readme", "-c", "/work", "bash -lc 'sed -n \"1,70p\" README.md; exec bash -i'")
