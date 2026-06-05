@@ -13,6 +13,7 @@ RUN apt-get update \
         procps \
         python3 \
         tmux \
+        vim-tiny \
         xdotool \
         xterm \
         xvfb \
