@@ -274,6 +274,7 @@ def display_key(key: str) -> str:
 def walk(term: ScreenRecording) -> None:
     h = term.hold
     h(1.5)
+    # Create a new session, child window, and child pane.
     term.key("g")
     term.key("g")
     term.key("O")
@@ -290,6 +291,7 @@ def walk(term: ScreenRecording) -> None:
     h(1.0)
     term.key("ctrl+q")
     h(0.7)
+    # Attach after each layout change so the viewer sees the tmux result.
     term.key("S")
     h(0.7)
     term.key("Return")
@@ -300,9 +302,11 @@ def walk(term: ScreenRecording) -> None:
     h(0.7)
     term.key("Return")
     h(1.0)
-    for key in ("ctrl+l", "ctrl+k", "ctrl+j" ):
+    # Move focus through panes with the tmux/vim navigation bindings.
+    for key in ("ctrl+l", "ctrl+k", "ctrl+j"):
         term.key(key)
         h(0.8)
+    # Put visible content in the active pane before zooming it.
     term.text("vi .")
     term.key("Return")
     h(1.0)
@@ -312,6 +316,7 @@ def walk(term: ScreenRecording) -> None:
     h(1.2)
     term.key("ctrl+q")
     h(0.7)
+    # Toggle zoom on the selected pane, then return to the full layout.
     term.key("z")
     h(0.7)
     term.key("Return")
@@ -324,6 +329,7 @@ def walk(term: ScreenRecording) -> None:
     h(1.0)
     term.key("ctrl+q")
     h(0.7)
+    # Demonstrate tree movement and slash search before the pane picker.
     term.key("G")
     term.key("g")
     term.key("g")
@@ -336,6 +342,7 @@ def walk(term: ScreenRecording) -> None:
     term.key("n")
     term.key("N")
     h(1.1)
+    # Open grep picker with space f g and type the query character by character.
     term.key("space")
     term.key("f")
     term.key("g")
@@ -354,6 +361,7 @@ def walk(term: ScreenRecording) -> None:
     h(1.0)
     term.key("ctrl+q")
     h(1.0)
+    # Cut the selected content pane and paste it into the docs window.
     term.key("x")
     h(0.9)
     term.key("f")
@@ -366,9 +374,11 @@ def walk(term: ScreenRecording) -> None:
     h(1.2)
     term.key("ctrl+q")
     h(0.9)
+    # Clear the filter before pinning so later j movement is easy to follow.
     term.key("f")
     term.key("Escape")
     h(0.8)
+    # Pin the selected pane, then attach to nearby targets to show it following.
     term.command("pin")
     h(1.0)
     term.key("j")
@@ -393,6 +403,7 @@ def walk(term: ScreenRecording) -> None:
     h(0.9)
     term.command("unpin")
     h(0.9)
+    # Create a disposable branch and delete one pane to show confirmation.
     term.key("O")
     term.text("trash")
     term.key("Return")
@@ -405,6 +416,7 @@ def walk(term: ScreenRecording) -> None:
     h(0.8)
     term.key("y")
     h(0.8)
+    # Refresh, then attach and start nested tmuxtui from a selected API pane.
     term.key("ctrl+r")
     h(0.8)
     term.key("f")
