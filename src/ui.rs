@@ -1,9 +1,9 @@
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    Frame,
 };
 
 use crate::app::{App, ConfirmAction, InputMode, Selection};
@@ -195,12 +195,17 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let area = centered_rect(area, 78, 70);
     frame.render_widget(Clear, area);
-    let block = Block::bordered().border_style(Style::default().fg(Color::White));
+    let separator_style = Style::default().fg(Color::Indexed(34));
+    let block = Block::bordered().border_style(separator_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
         .split(inner);
     let body = Layout::default()
         .direction(Direction::Horizontal)
@@ -209,20 +214,24 @@ fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
             Constraint::Length(1),
             Constraint::Percentage(57),
         ])
-        .split(sections[1]);
+        .split(sections[2]);
     let prompt = Paragraph::new(format!("grep: {}", current_input(state)))
         .style(Style::default().bg(Color::Indexed(234)).fg(Color::White))
         .wrap(Wrap { trim: false });
+    let prompt_divider = Block::default()
+        .borders(Borders::TOP)
+        .border_style(separator_style);
     let results = Paragraph::new(Text::from(state.picker_lines.clone()))
         .style(Style::default().bg(Color::Indexed(234)).fg(Color::White))
         .wrap(Wrap { trim: false });
     let divider = Block::default()
         .borders(Borders::LEFT)
-        .border_style(Style::default().fg(Color::White));
+        .border_style(separator_style);
     let preview = Paragraph::new(state.picker_preview.clone())
         .style(Style::default().bg(Color::Indexed(234)).fg(Color::White));
 
     frame.render_widget(prompt, sections[0]);
+    frame.render_widget(prompt_divider, sections[1]);
     frame.render_widget(results, body[0]);
     frame.render_widget(divider, body[1]);
     frame.render_widget(preview, body[2]);
