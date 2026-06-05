@@ -23,6 +23,7 @@ ROOT = Path("/work")
 OUT = ROOT / "demo" / "out"
 CHECKS = OUT / "frame-checks"
 VIDEO = OUT / "tmuxtui-demo.mp4"
+GIF = ROOT / "demo" / "tmuxtui-demo.gif"
 VERIFY = OUT / "verification.txt"
 DISPLAY = ":99"
 WIDTH = 1232
@@ -397,6 +398,12 @@ def verify_video() -> None:
     VERIFY.write_text("\n".join([f"video={VIDEO}", f"ffprobe={json.dumps(json.loads(ffprobe.stdout), sort_keys=True)}", f"samples={len(samples)}", f"min_contrast={min(item['contrast'] for item in stats):.2f}", f"min_colors={min(item['colors'] for item in stats)}", f"moving_pairs={moving}/{len(diffs)}", "ffmpeg_scan_stderr=", scan_text, ""]))
 
 
+def export_gif() -> None:
+    palette = OUT / "tmuxtui-demo-palette.png"
+    subprocess.run(["ffmpeg", "-y", "-i", str(VIDEO), "-vf", "fps=8,scale=900:-1:flags=lanczos,palettegen", str(palette)], check=True, text=True, capture_output=True)
+    subprocess.run(["ffmpeg", "-y", "-i", str(VIDEO), "-i", str(palette), "-lavfi", "fps=8,scale=900:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer", str(GIF)], check=True, text=True, capture_output=True)
+
+
 def image_stats(path: Path) -> dict[str, float]:
     image = Image.open(path).convert("L")
     stat = ImageStat.Stat(image)
@@ -424,7 +431,9 @@ def main() -> None:
         recording.close()
         tmux(env, "kill-server", check=False)
     verify_video()
+    export_gif()
     print(VIDEO)
+    print(GIF)
     print(VERIFY)
 
 

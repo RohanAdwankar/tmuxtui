@@ -1,6 +1,6 @@
 # tmux-tui
 
-https://github.com/user-attachments/assets/301d441f-d26a-40b3-9750-8c105c280dc2
+![tmuxtui demo](demo/tmuxtui-demo.gif)
 
 `tmux-tui` gives you the key benefits of tmux with a simple UI and intuitive vim motions.
 

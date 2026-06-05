@@ -3,6 +3,7 @@
 `demo/run.sh` builds a Docker image, runs `tmuxtui` only inside that container, records a feature walkthrough, and writes:
 
 - `demo/out/tmuxtui-demo.mp4`
+- `demo/tmuxtui-demo.gif`
 - `demo/out/frame-checks/`
 - `demo/out/verification.txt`
 
