@@ -1122,11 +1122,10 @@ impl App {
                             Selection::Pane(session_idx, window_idx, pane_idx)
                         },
                         label: format!(
-                            "{} / {} / {} / {}",
+                            "{} / {} / {}",
                             session.name,
                             window.name,
-                            pane_label(pane_idx),
-                            pane.current_path
+                            pane_label(pane_idx)
                         ),
                         preview: self.tmux.capture_pane(&pane.id)?,
                     });

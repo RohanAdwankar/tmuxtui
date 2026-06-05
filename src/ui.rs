@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 use crate::app::{App, ConfirmAction, InputMode, Selection};
@@ -193,7 +193,7 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 }
 
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
-    let area = centered_rect(area, 88, 82);
+    let area = centered_rect(area, 78, 70);
     frame.render_widget(Clear, area);
     let block = Block::bordered().border_style(Style::default().fg(Color::White));
     let inner = block.inner(area);
@@ -204,20 +204,28 @@ fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
         .split(inner);
     let body = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
+        .constraints([
+            Constraint::Percentage(42),
+            Constraint::Length(1),
+            Constraint::Percentage(57),
+        ])
         .split(sections[1]);
     let prompt = Paragraph::new(format!("grep: {}", current_input(state)))
-        .style(Style::default().bg(Color::Indexed(34)).fg(Color::Black))
+        .style(Style::default().bg(Color::Indexed(234)).fg(Color::White))
         .wrap(Wrap { trim: false });
     let results = Paragraph::new(Text::from(state.picker_lines.clone()))
-        .style(Style::default().bg(Color::Indexed(236)).fg(Color::White))
+        .style(Style::default().bg(Color::Indexed(234)).fg(Color::White))
         .wrap(Wrap { trim: false });
+    let divider = Block::default()
+        .borders(Borders::LEFT)
+        .border_style(Style::default().fg(Color::White));
     let preview = Paragraph::new(state.picker_preview.clone())
         .style(Style::default().bg(Color::Indexed(234)).fg(Color::White));
 
     frame.render_widget(prompt, sections[0]);
     frame.render_widget(results, body[0]);
-    frame.render_widget(preview, body[1]);
+    frame.render_widget(divider, body[1]);
+    frame.render_widget(preview, body[2]);
 }
 
 fn centered_rect(area: Rect, percent_x: u16, percent_y: u16) -> Rect {
