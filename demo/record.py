@@ -366,10 +366,6 @@ def walk(term: ScreenRecording) -> None:
     h(0.9)
     term.key("p")
     h(1.0)
-    term.key("Return")
-    h(1.2)
-    term.key("ctrl+q")
-    h(0.9)
     # Pin the selected pane, then attach to nearby targets to show it following.
     term.command("pin")
     h(1.0)
@@ -379,23 +375,10 @@ def walk(term: ScreenRecording) -> None:
     h(1.2)
     term.key("ctrl+q")
     h(0.9)
-    term.key("j")
-    h(0.8)
-    term.key("Return")
-    h(1.2)
-    term.key("ctrl+q")
+    #delete the vi pane
+    term.key("d")
     h(0.9)
-    for _ in range(3):
-        term.key("j")
-        h(0.22)
-    h(0.8)
-    term.key("Return")
-    h(1.2)
-    term.key("ctrl+q")
-    h(0.9)
-    term.command("unpin")
-    h(0.9)
-    #delete the tmux pane
+    term.key("y")
 
 def verify_video() -> None:
     shutil.rmtree(CHECKS, ignore_errors=True)
