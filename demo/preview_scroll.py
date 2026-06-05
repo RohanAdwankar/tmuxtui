@@ -270,7 +270,7 @@ def walk(term: ScreenRecording) -> None:
     h(1.5)
     term.key("Return")
     h(0.8)
-    term.text('for i in $(seq 0 100); do printf "%03d\\n" "$i"; sleep 0.02; done; sleep 30')
+    term.text('for i in $(seq 0 300); do printf "%03d\\n" "$i"; sleep 0.02; done; sleep 30')
     term.key("Return")
     for _ in range(80):
         visible = tmux(term.env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
