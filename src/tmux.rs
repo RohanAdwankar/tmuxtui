@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 
 use crate::managed_config::ManagedConfig;
 
@@ -140,7 +140,7 @@ impl Tmux {
     }
 
     pub fn capture_pane(&self, pane_id: &str) -> Result<String> {
-        self.run(["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-120"])
+        self.run(capture_pane_args(pane_id))
     }
 
     pub fn archive_panes(&self, name: &str, panes: &[(String, String)]) -> Result<String> {
@@ -794,6 +794,10 @@ fn archive_name(name: &str) -> String {
     }
 }
 
+fn capture_pane_args(pane_id: &str) -> [&str; 5] {
+    ["capture-pane", "-J", "-p", "-t", pane_id]
+}
+
 fn parse_sessions(raw: &str) -> Vec<Session> {
     raw.lines()
         .filter_map(|line| {
@@ -848,9 +852,17 @@ fn parse_panes(raw: &str) -> Vec<Pane> {
 #[cfg(test)]
 mod tests {
     use super::{
-        CaffeinateEntry, parse_caffeinate_entries, parse_panes, parse_sessions, parse_windows,
-        render_caffeinate_entries,
+        capture_pane_args, parse_caffeinate_entries, parse_panes, parse_sessions, parse_windows,
+        render_caffeinate_entries, CaffeinateEntry,
     };
+
+    #[test]
+    fn preview_capture_uses_visible_screen_only() {
+        assert_eq!(
+            capture_pane_args("%1"),
+            ["capture-pane", "-J", "-p", "-t", "%1"]
+        );
+    }
 
     #[test]
     fn parses_tmux_snapshot_rows() {

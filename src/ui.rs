@@ -185,11 +185,16 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let status = Paragraph::new(state.preview_status.clone())
         .style(Style::default().bg(Color::Indexed(34)).fg(Color::Black))
         .wrap(Wrap { trim: false });
-    let preview =
-        Paragraph::new(state.preview_text.clone()).style(Style::default().bg(Color::Indexed(234)));
+    let preview = Paragraph::new(state.preview_text.clone())
+        .style(Style::default().bg(Color::Indexed(234)))
+        .scroll((bottom_scroll(&state.preview_text, sections[1]), 0));
 
     frame.render_widget(status, sections[0]);
     frame.render_widget(preview, sections[1]);
+}
+
+fn bottom_scroll(text: &str, area: Rect) -> u16 {
+    (text.lines().count() as u16).saturating_sub(area.height.saturating_sub(2))
 }
 
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
@@ -228,7 +233,8 @@ fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
         .borders(Borders::LEFT)
         .border_style(separator_style);
     let preview = Paragraph::new(state.picker_preview.clone())
-        .style(Style::default().bg(Color::Indexed(234)).fg(Color::White));
+        .style(Style::default().bg(Color::Indexed(234)).fg(Color::White))
+        .scroll((bottom_scroll(&state.picker_preview, body[2]), 0));
 
     frame.render_widget(prompt, sections[0]);
     frame.render_widget(prompt_divider, sections[1]);
@@ -395,13 +401,24 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{marker_column, pane_tree_label, pane_tree_line, session_label, window_tree_label};
+    use super::{
+        bottom_scroll, marker_column, pane_tree_label, pane_tree_line, session_label,
+        window_tree_label,
+    };
     use crate::{
         app::App,
         managed_config::ManagedConfig,
         tmux::{Pane, Session, Snapshot, Tmux, Window},
     };
+    use ratatui::layout::Rect;
     use std::collections::HashSet;
+
+    #[test]
+    fn preview_scrolls_to_bottom_when_text_exceeds_area() {
+        let text = "1\n2\n3\n4\n5";
+        assert_eq!(bottom_scroll(text, Rect::new(0, 0, 10, 3)), 4);
+        assert_eq!(bottom_scroll(text, Rect::new(0, 0, 10, 8)), 0);
+    }
 
     #[test]
     fn pane_tree_label_uses_window_local_numbers() {
