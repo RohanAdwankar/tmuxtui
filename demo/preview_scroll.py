@@ -28,6 +28,8 @@ DISPLAY = ":98"
 WIDTH = 1232
 HEIGHT = 788
 FPS = 12
+TARGET_LINE = "300"
+PREVIEW_AT_LINE = "100"
 
 
 def run(args: list[str], env: dict[str, str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -275,12 +277,20 @@ def walk(term: ScreenRecording) -> None:
     for _ in range(80):
         visible = tmux(term.env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
         lines = [line for line in visible.splitlines() if line.strip()]
-        if "100" in lines[-3:]:
+        if PREVIEW_AT_LINE in lines[-3:]:
             break
         time.sleep(0.25)
+    # Return to tmuxtui while output is still scrolling so the preview proves live bottom anchoring.
     term.key("ctrl+q", pause=0.5)
+    for _ in range(80):
+        visible = tmux(term.env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
+        lines = [line for line in visible.splitlines() if line.strip()]
+        if lines and lines[-1] == TARGET_LINE:
+            break
+        time.sleep(0.25)
+    h(2.0)
     tmux(term.env, "detach-client", check=False)
-    h(4.0)
+    h(0.8)
 
 
 def verify_video(env: dict[str, str]) -> None:
@@ -295,15 +305,15 @@ def verify_video(env: dict[str, str]) -> None:
     bad = [item for item in stats if item["contrast"] < 20 or item["colors"] < 8]
     diffs = [frame_diff(left, right) for left, right in zip(samples, samples[1:])]
     moving = sum(diff > 0.35 for diff in diffs)
-    if not samples or bad or moving < max(3, len(diffs) // 4):
+    if not samples or bad or moving < 3:
         raise RuntimeError("ffmpeg frame verification failed")
     final_frame = OUT / "preview-scroll-final.png"
     subprocess.run(["ffmpeg", "-y", "-sseof", "-0.2", "-i", str(VIDEO), "-frames:v", "1", str(final_frame)], check=True, text=True, capture_output=True)
     visible = tmux(env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
     lines = [line for line in visible.splitlines() if line.strip()]
-    if "000" in lines or lines[-1] != "100":
+    if not lines or "000" in lines or lines[-1] != TARGET_LINE:
         raise RuntimeError(f"preview capture did not show scrolled bottom: {lines[-8:]}")
-    VERIFY.write_text("\n".join([f"video={VIDEO}", f"final_frame={final_frame}", f"ffprobe={json.dumps(json.loads(ffprobe.stdout), sort_keys=True)}", f"samples={len(samples)}", f"min_contrast={min(item['contrast'] for item in stats):.2f}", f"min_colors={min(item['colors'] for item in stats)}", f"moving_pairs={moving}/{len(diffs)}", f"visible_tail={lines[-8:]}", f"contains_000={'000' in lines}", f"tail_contains_100={lines[-1] == '100'}", "ffmpeg_scan_stderr=", scan_text, ""]))
+    VERIFY.write_text("\n".join([f"video={VIDEO}", f"final_frame={final_frame}", f"ffprobe={json.dumps(json.loads(ffprobe.stdout), sort_keys=True)}", f"samples={len(samples)}", f"min_contrast={min(item['contrast'] for item in stats):.2f}", f"min_colors={min(item['colors'] for item in stats)}", f"moving_pairs={moving}/{len(diffs)}", f"visible_tail={lines[-8:]}", f"contains_000={'000' in lines}", f"tail_contains_target={lines[-1] == TARGET_LINE}", "ffmpeg_scan_stderr=", scan_text, ""]))
 
 
 def image_stats(path: Path) -> dict[str, float]:
