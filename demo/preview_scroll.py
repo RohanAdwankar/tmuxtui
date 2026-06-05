@@ -29,7 +29,6 @@ WIDTH = 1232
 HEIGHT = 788
 FPS = 12
 TARGET_LINE = "300"
-PREVIEW_AT_LINE = "100"
 
 
 def run(args: list[str], env: dict[str, str], check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -272,16 +271,12 @@ def walk(term: ScreenRecording) -> None:
     h(1.5)
     term.key("Return")
     h(0.8)
-    term.text('for i in $(seq 0 300); do printf "%03d\\n" "$i"; sleep 0.02; done; sleep 30')
+    term.text('for i in $(seq -w 0 300); do echo "$i"; sleep 0.05; done; sleep 30')
     term.key("Return")
-    for _ in range(80):
-        visible = tmux(term.env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
-        lines = [line for line in visible.splitlines() if line.strip()]
-        if PREVIEW_AT_LINE in lines[-3:]:
-            break
-        time.sleep(0.25)
-    # Return to tmuxtui while output is still scrolling so the preview proves live bottom anchoring.
-    term.key("ctrl+q", pause=0.5)
+    h(0.5)
+    # Detach directly so the preview opens while the counter is still actively scrolling.
+    tmux(term.env, "detach-client", check=False)
+    h(0.5)
     for _ in range(80):
         visible = tmux(term.env, "capture-pane", "-J", "-p", "-t", "scroll:counter", check=False).stdout
         lines = [line for line in visible.splitlines() if line.strip()]
@@ -289,8 +284,6 @@ def walk(term: ScreenRecording) -> None:
             break
         time.sleep(0.25)
     h(2.0)
-    tmux(term.env, "detach-client", check=False)
-    h(0.8)
 
 
 def verify_video(env: dict[str, str]) -> None:
