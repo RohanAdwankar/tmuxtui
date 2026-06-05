@@ -195,9 +195,7 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let area = centered_rect(area, 88, 82);
     frame.render_widget(Clear, area);
-    let block = Block::bordered()
-        .style(Style::default().bg(Color::Indexed(240)))
-        .border_style(Style::default().fg(Color::White).bg(Color::Indexed(240)));
+    let block = Block::bordered().border_style(Style::default().fg(Color::White));
     let inner = block.inner(area);
     frame.render_widget(block, area);
     let sections = Layout::default()
