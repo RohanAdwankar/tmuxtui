@@ -3,8 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::Clear,
-    widgets::{Paragraph, Wrap},
+    widgets::{Block, Clear, Paragraph, Wrap},
 };
 
 use crate::app::{App, ConfirmAction, InputMode, Selection};
@@ -196,14 +195,11 @@ fn draw_preview(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
 fn draw_picker(frame: &mut Frame<'_>, area: Rect, state: &DrawState<'_>) {
     let area = centered_rect(area, 88, 82);
     frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new("").style(Style::default().bg(Color::Indexed(240))),
-        area,
-    );
-    let inner = area.inner(ratatui::layout::Margin {
-        horizontal: 1,
-        vertical: 1,
-    });
+    let block = Block::bordered()
+        .style(Style::default().bg(Color::Indexed(240)))
+        .border_style(Style::default().fg(Color::White).bg(Color::Indexed(240)));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     let sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1)])
