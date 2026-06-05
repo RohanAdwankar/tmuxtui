@@ -300,10 +300,10 @@ def walk(term: ScreenRecording) -> None:
     h(0.7)
     term.key("Return")
     h(1.0)
-    for key in ("ctrl+l", "ctrl+j", "ctrl+h", "ctrl+k"):
+    for key in ("ctrl+l", "ctrl+k", "ctrl+j" ):
         term.key(key)
         h(0.8)
-    term.text("vi -n job-notes.txt")
+    term.text("vi .")
     term.key("Return")
     h(1.0)
     term.key("i")
@@ -404,10 +404,6 @@ def walk(term: ScreenRecording) -> None:
     term.key("d")
     h(0.8)
     term.key("y")
-    h(0.8)
-    term.command("hidestatus")
-    h(0.8)
-    term.command("showstatus")
     h(0.8)
     term.key("ctrl+r")
     h(0.8)
