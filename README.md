@@ -76,6 +76,21 @@ Run `tmuxtui --config` to rewrite and reload the managed tmux config without ope
 | `:sidebar a` | auto-size the sidebar to the visible tree |
 | `:sidebar 0-100` | set the sidebar width percentage |
 
+
+## Key Bindings
+
+Run `tmuxtui --config` once to write `~/.config/tmuxtui/settings.conf`. Normal-mode bindings can be changed there with `key.<action>=<sequence>` lines. Use space-separated tokens for multi-key bindings, for example:
+
+```conf
+key.picker=space f g
+key.quit=q
+key.down=j
+key.up=k
+key.refresh=ctrl-r
+```
+
+Available normal-mode action names are `quit`, `picker`, `next_search`, `previous_search`, `down`, `up`, `top`, `bottom`, `kill`, `kill_window`, `archive`, `archive_window`, `caffeinate`, `cut`, `paste_child`, `paste_peer`, `attach`, `search`, `filter`, `command`, `new_child`, `new_peer`, `refresh`, `rename`, `remote_tmux`, `split_down`, `split_right`, and `zoom`.
+
 ## Naming Behavior
 
 | Situation | Behavior |

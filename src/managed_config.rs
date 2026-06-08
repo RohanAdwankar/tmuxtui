@@ -13,6 +13,85 @@ pub struct Settings {
     pub show_status: bool,
     pub sidebar_percent: u8,
     pub sidebar_auto: bool,
+    pub key_bindings: KeyBindings,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyBindings {
+    pub quit: Vec<String>,
+    pub picker: Vec<String>,
+    pub next_search: Vec<String>,
+    pub previous_search: Vec<String>,
+    pub down: Vec<String>,
+    pub up: Vec<String>,
+    pub top: Vec<String>,
+    pub bottom: Vec<String>,
+    pub kill: Vec<String>,
+    pub kill_window: Vec<String>,
+    pub archive: Vec<String>,
+    pub archive_window: Vec<String>,
+    pub caffeinate: Vec<String>,
+    pub cut: Vec<String>,
+    pub paste_child: Vec<String>,
+    pub paste_peer: Vec<String>,
+    pub attach: Vec<String>,
+    pub search: Vec<String>,
+    pub filter: Vec<String>,
+    pub command: Vec<String>,
+    pub new_child: Vec<String>,
+    pub new_peer: Vec<String>,
+    pub refresh: Vec<String>,
+    pub rename: Vec<String>,
+    pub remote_tmux: Vec<String>,
+    pub split_down: Vec<String>,
+    pub split_right: Vec<String>,
+    pub zoom: Vec<String>,
+}
+
+impl Default for KeyBindings {
+    fn default() -> Self {
+        Self {
+            quit: keys("q"),
+            picker: keys("space f g"),
+            next_search: keys("n"),
+            previous_search: keys("N"),
+            down: keys("j"),
+            up: keys("k"),
+            top: keys("g g"),
+            bottom: keys("G"),
+            kill: keys("d"),
+            kill_window: keys("D"),
+            archive: keys("a"),
+            archive_window: keys("A"),
+            caffeinate: keys("c"),
+            cut: keys("x"),
+            paste_child: keys("p"),
+            paste_peer: keys("P"),
+            attach: keys("enter"),
+            search: keys("/"),
+            filter: keys("f"),
+            command: keys(":"),
+            new_child: keys("o"),
+            new_peer: keys("O"),
+            refresh: keys("ctrl-r"),
+            rename: keys("r"),
+            remote_tmux: keys("R"),
+            split_down: keys("s"),
+            split_right: keys("S"),
+            zoom: keys("z"),
+        }
+    }
+}
+
+fn keys(value: &str) -> Vec<String> {
+    value.split_whitespace().map(normalize_key_token).collect()
+}
+
+fn normalize_key_token(token: &str) -> String {
+    match token.trim() {
+        " " => String::from("space"),
+        value => value.replace("C-", "ctrl-").replace("c-", "ctrl-"),
+    }
 }
 
 impl Default for Settings {
@@ -22,6 +101,7 @@ impl Default for Settings {
             show_status: DEFAULT_SHOW_STATUS,
             sidebar_percent: DEFAULT_SIDEBAR_PERCENT,
             sidebar_auto: DEFAULT_SIDEBAR_AUTO,
+            key_bindings: KeyBindings::default(),
         }
     }
 }
@@ -136,6 +216,11 @@ fn read_settings(path: &PathBuf) -> Result<Settings> {
                 }
             }
             "sidebar_auto" => settings.sidebar_auto = parsed,
+            name if name.starts_with("key.") => {
+                if let Some(keys) = parse_key_sequence(value) {
+                    set_key_binding(&mut settings.key_bindings, &name[4..], keys);
+                }
+            }
             _ => {}
         }
     }
@@ -144,10 +229,89 @@ fn read_settings(path: &PathBuf) -> Result<Settings> {
 }
 
 fn render_settings(settings: &Settings) -> String {
-    format!(
+    let mut rendered = format!(
         "show_hints={}\nshow_status={}\nsidebar_percent={}\nsidebar_auto={}\n",
         settings.show_hints, settings.show_status, settings.sidebar_percent, settings.sidebar_auto
-    )
+    );
+    for (name, binding) in key_binding_entries(&settings.key_bindings) {
+        rendered.push_str(&format!("key.{name}={}\n", binding.join(" ")));
+    }
+    rendered
+}
+
+fn parse_key_sequence(value: &str) -> Option<Vec<String>> {
+    let keys = value
+        .split_whitespace()
+        .map(normalize_key_token)
+        .collect::<Vec<_>>();
+    (!keys.is_empty()).then_some(keys)
+}
+
+fn set_key_binding(bindings: &mut KeyBindings, name: &str, keys: Vec<String>) {
+    match name {
+        "quit" => bindings.quit = keys,
+        "picker" => bindings.picker = keys,
+        "next_search" => bindings.next_search = keys,
+        "previous_search" => bindings.previous_search = keys,
+        "down" => bindings.down = keys,
+        "up" => bindings.up = keys,
+        "top" => bindings.top = keys,
+        "bottom" => bindings.bottom = keys,
+        "kill" => bindings.kill = keys,
+        "kill_window" => bindings.kill_window = keys,
+        "archive" => bindings.archive = keys,
+        "archive_window" => bindings.archive_window = keys,
+        "caffeinate" => bindings.caffeinate = keys,
+        "cut" => bindings.cut = keys,
+        "paste_child" => bindings.paste_child = keys,
+        "paste_peer" => bindings.paste_peer = keys,
+        "attach" => bindings.attach = keys,
+        "search" => bindings.search = keys,
+        "filter" => bindings.filter = keys,
+        "command" => bindings.command = keys,
+        "new_child" => bindings.new_child = keys,
+        "new_peer" => bindings.new_peer = keys,
+        "refresh" => bindings.refresh = keys,
+        "rename" => bindings.rename = keys,
+        "remote_tmux" => bindings.remote_tmux = keys,
+        "split_down" => bindings.split_down = keys,
+        "split_right" => bindings.split_right = keys,
+        "zoom" => bindings.zoom = keys,
+        _ => {}
+    }
+}
+
+pub fn key_binding_entries(bindings: &KeyBindings) -> Vec<(&str, &Vec<String>)> {
+    vec![
+        ("quit", &bindings.quit),
+        ("picker", &bindings.picker),
+        ("next_search", &bindings.next_search),
+        ("previous_search", &bindings.previous_search),
+        ("down", &bindings.down),
+        ("up", &bindings.up),
+        ("top", &bindings.top),
+        ("bottom", &bindings.bottom),
+        ("kill", &bindings.kill),
+        ("kill_window", &bindings.kill_window),
+        ("archive", &bindings.archive),
+        ("archive_window", &bindings.archive_window),
+        ("caffeinate", &bindings.caffeinate),
+        ("cut", &bindings.cut),
+        ("paste_child", &bindings.paste_child),
+        ("paste_peer", &bindings.paste_peer),
+        ("attach", &bindings.attach),
+        ("search", &bindings.search),
+        ("filter", &bindings.filter),
+        ("command", &bindings.command),
+        ("new_child", &bindings.new_child),
+        ("new_peer", &bindings.new_peer),
+        ("refresh", &bindings.refresh),
+        ("rename", &bindings.rename),
+        ("remote_tmux", &bindings.remote_tmux),
+        ("split_down", &bindings.split_down),
+        ("split_right", &bindings.split_right),
+        ("zoom", &bindings.zoom),
+    ]
 }
 
 fn render_tmux_conf(settings: &Settings) -> String {
@@ -205,7 +369,7 @@ bind -n C-q run-shell "tmux set-option -gq @tmuxtui-session '#{session_id}'; tmu
 
 #[cfg(test)]
 mod tests {
-    use super::{Settings, render_settings, render_tmux_conf};
+    use super::{render_settings, render_tmux_conf, KeyBindings, Settings};
 
     #[test]
     fn renders_settings_file() {
@@ -214,11 +378,12 @@ mod tests {
             show_status: true,
             sidebar_percent: 24,
             sidebar_auto: true,
+            key_bindings: KeyBindings::default(),
         };
 
         assert_eq!(
             render_settings(&settings),
-            "show_hints=false\nshow_status=true\nsidebar_percent=24\nsidebar_auto=true\n"
+            "show_hints=false\nshow_status=true\nsidebar_percent=24\nsidebar_auto=true\nkey.quit=q\nkey.picker=space f g\nkey.next_search=n\nkey.previous_search=N\nkey.down=j\nkey.up=k\nkey.top=g g\nkey.bottom=G\nkey.kill=d\nkey.kill_window=D\nkey.archive=a\nkey.archive_window=A\nkey.caffeinate=c\nkey.cut=x\nkey.paste_child=p\nkey.paste_peer=P\nkey.attach=enter\nkey.search=/\nkey.filter=f\nkey.command=:\nkey.new_child=o\nkey.new_peer=O\nkey.refresh=ctrl-r\nkey.rename=r\nkey.remote_tmux=R\nkey.split_down=s\nkey.split_right=S\nkey.zoom=z\n"
         );
     }
 
@@ -229,6 +394,7 @@ mod tests {
             show_status: true,
             sidebar_percent: 24,
             sidebar_auto: false,
+            key_bindings: KeyBindings::default(),
         };
 
         let tmux_conf = render_tmux_conf(&settings);

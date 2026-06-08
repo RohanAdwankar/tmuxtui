@@ -2,3 +2,6 @@
 .DS_Store
 demo/out/
 __pycache__/
+*.md
+!README.md
+!**/README.md

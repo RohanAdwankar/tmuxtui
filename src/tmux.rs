@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context, Result};
 
-use crate::managed_config::ManagedConfig;
+use crate::managed_config::{KeyBindings, ManagedConfig};
 
 #[derive(Clone, Debug)]
 pub struct Tmux {
@@ -89,6 +89,10 @@ impl Tmux {
 
     pub fn sidebar_auto(&self) -> bool {
         self.managed.settings().sidebar_auto
+    }
+
+    pub fn key_bindings(&self) -> &KeyBindings {
+        &self.managed.settings().key_bindings
     }
 
     pub fn snapshot(&self) -> Result<Snapshot> {

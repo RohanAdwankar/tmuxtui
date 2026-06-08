@@ -5,11 +5,12 @@ use std::{
 
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{backend::CrosstermBackend, Terminal};
 
 use crate::{
+    managed_config::{key_binding_entries, KeyBindings},
     tmux::{LastTarget, Snapshot, TargetKind, Tmux},
-    ui::{Action, DrawState, draw},
+    ui::{draw, Action, DrawState},
 };
 
 const TICK_RATE: Duration = Duration::from_millis(200);
@@ -39,6 +40,38 @@ pub enum ConfirmAction {
     KillSession { session_id: String, name: String },
     KillWindow { window_id: String, name: String },
     KillPane { pane_id: String, name: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NormalAction {
+    Quit,
+    Picker,
+    NextSearch,
+    PreviousSearch,
+    Down,
+    Up,
+    Top,
+    Bottom,
+    Kill,
+    KillWindow,
+    Archive,
+    ArchiveWindow,
+    Caffeinate,
+    Cut,
+    PasteChild,
+    PastePeer,
+    Attach,
+    Search,
+    Filter,
+    Command,
+    NewChild,
+    NewPeer,
+    Refresh,
+    Rename,
+    RemoteTmux,
+    SplitDown,
+    SplitRight,
+    Zoom,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -131,13 +164,13 @@ pub struct App {
     attach_target: Option<TargetKind>,
     cut_target: Option<CutTarget>,
     count_prefix: Option<usize>,
-    pending_g: bool,
-    pending_space: bool,
-    pending_space_f: bool,
+    pending_keys: Vec<String>,
+    key_bindings: KeyBindings,
 }
 
 impl App {
     pub fn new(tmux: Tmux) -> Self {
+        let key_bindings = tmux.key_bindings().clone();
         Self {
             tmux,
             snapshot: Snapshot {
@@ -159,9 +192,8 @@ impl App {
             attach_target: None,
             cut_target: None,
             count_prefix: None,
-            pending_g: false,
-            pending_space: false,
-            pending_space_f: false,
+            pending_keys: Vec::new(),
+            key_bindings,
         }
     }
 
@@ -303,174 +335,113 @@ impl App {
     }
 
     fn handle_normal(&mut self, key: KeyEvent) -> Result<()> {
-        if self.pending_space_f {
-            self.pending_space_f = false;
-            self.pending_space = false;
-            if matches!(key.code, KeyCode::Char('g')) {
-                self.clear_count();
-                self.start_picker()?;
-            }
+        let Some(token) = normal_key_token(key) else {
+            self.clear_count();
+            self.pending_keys.clear();
             return Ok(());
-        }
-        if self.pending_space {
-            self.pending_space = false;
-            if matches!(key.code, KeyCode::Char('f')) {
-                self.pending_space_f = true;
-            }
-            return Ok(());
-        }
+        };
 
-        if self.pending_g {
-            self.pending_g = false;
-            match key.code {
-                KeyCode::Char('g') => {
-                    self.jump_to_index(0);
-                    self.clear_count();
-                    return Ok(());
-                }
-                _ => self.clear_count(),
-            }
-        }
-
-        if let KeyCode::Char(ch) = key.code {
-            if let Some(digit) = ch.to_digit(10) {
-                if digit > 0 || self.count_prefix.is_some() {
-                    self.push_count_digit(digit as usize);
-                    return Ok(());
+        if self.pending_keys.is_empty() {
+            if let KeyCode::Char(ch) = key.code {
+                if let Some(digit) = ch.to_digit(10) {
+                    if digit > 0 || self.count_prefix.is_some() {
+                        self.push_count_digit(digit as usize);
+                        return Ok(());
+                    }
                 }
             }
         }
 
-        match key.code {
-            KeyCode::Char('q') => {
-                self.clear_count();
-                self.should_quit = true;
-            }
-            KeyCode::Char(' ') => {
-                self.clear_count();
-                self.pending_space = true;
-            }
-            KeyCode::Char('n') => {
-                self.clear_count();
+        self.pending_keys.push(token);
+        if let Some(action) = self.pending_normal_action() {
+            self.pending_keys.clear();
+            return self.run_normal_action(action);
+        }
+        if self.has_pending_normal_prefix() {
+            return Ok(());
+        }
+        self.pending_keys.clear();
+        self.clear_count();
+        Ok(())
+    }
+
+    fn pending_normal_action(&self) -> Option<NormalAction> {
+        normal_bindings(&self.key_bindings)
+            .into_iter()
+            .find_map(|(action, binding)| {
+                (binding == self.pending_keys.as_slice()).then_some(action)
+            })
+    }
+
+    fn has_pending_normal_prefix(&self) -> bool {
+        normal_bindings(&self.key_bindings)
+            .into_iter()
+            .any(|(_, binding)| starts_with(binding, &self.pending_keys))
+    }
+
+    fn run_normal_action(&mut self, action: NormalAction) -> Result<()> {
+        match action {
+            NormalAction::Quit => self.should_quit = true,
+            NormalAction::Picker => self.start_picker()?,
+            NormalAction::NextSearch => {
                 self.search_match(true, false);
                 self.refresh_preview()?;
             }
-            KeyCode::Char('N') => {
-                self.clear_count();
+            NormalAction::PreviousSearch => {
                 self.search_match(false, false);
                 self.refresh_preview()?;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
+            NormalAction::Down => {
                 let count = self.take_count() as isize;
                 self.move_selection(count);
+                return Ok(());
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            NormalAction::Up => {
                 let count = self.take_count() as isize;
                 self.move_selection(-count);
+                return Ok(());
             }
-            KeyCode::Char('g') => {
-                self.pending_g = true;
-            }
-            KeyCode::Char('d') => {
-                self.clear_count();
-                self.start_kill_prompt(false);
-            }
-            KeyCode::Char('D') => {
-                self.clear_count();
-                self.start_kill_prompt(true);
-            }
-            KeyCode::Char('a') => {
-                self.clear_count();
-                self.archive_selected(false)?;
-            }
-            KeyCode::Char('A') => {
-                self.clear_count();
-                self.archive_selected(true)?;
-            }
-            KeyCode::Char('c') => {
-                self.clear_count();
-                self.toggle_caffeinate_selected()?;
-            }
-            KeyCode::Char('x') => {
-                self.clear_count();
-                self.cut_selected();
-            }
-            KeyCode::Char('p') => {
-                self.clear_count();
-                self.paste_cut(false)?;
-            }
-            KeyCode::Char('P') => {
-                self.clear_count();
-                self.paste_cut(true)?;
-            }
-            KeyCode::Char('G') => {
+            NormalAction::Top => self.jump_to_index(0),
+            NormalAction::Bottom => {
                 if self.count_prefix.is_some() {
                     let target = self.take_count().saturating_sub(1);
                     self.jump_to_index(target);
-                } else {
-                    let last = self.visible_rows().len().saturating_sub(1);
-                    self.clear_count();
-                    self.jump_to_index(last);
+                    return Ok(());
                 }
+                let last = self.visible_rows().len().saturating_sub(1);
+                self.jump_to_index(last);
             }
-            KeyCode::Enter => {
-                self.clear_count();
-                self.attach_selected()?;
-            }
-            KeyCode::Char('/') => {
-                self.clear_count();
+            NormalAction::Kill => self.start_kill_prompt(false),
+            NormalAction::KillWindow => self.start_kill_prompt(true),
+            NormalAction::Archive => self.archive_selected(false)?,
+            NormalAction::ArchiveWindow => self.archive_selected(true)?,
+            NormalAction::Caffeinate => self.toggle_caffeinate_selected()?,
+            NormalAction::Cut => self.cut_selected(),
+            NormalAction::PasteChild => self.paste_cut(false)?,
+            NormalAction::PastePeer => self.paste_cut(true)?,
+            NormalAction::Attach => self.attach_selected()?,
+            NormalAction::Search => {
                 self.mode = InputMode::Search;
                 self.input.clear();
             }
-            KeyCode::Char('f') => {
-                self.clear_count();
+            NormalAction::Filter => {
                 self.mode = InputMode::Filter;
                 self.input = self.filter.clone();
             }
-            KeyCode::Char(':') => {
-                self.clear_count();
+            NormalAction::Command => {
                 self.mode = InputMode::Command;
                 self.input.clear();
             }
-            KeyCode::Char('o') => {
-                self.clear_count();
-                self.start_child_create()?;
-            }
-            KeyCode::Char('O') => {
-                self.clear_count();
-                self.start_peer_create()?;
-            }
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.clear_count();
-                self.refresh()?;
-            }
-            KeyCode::Char('r') => {
-                self.clear_count();
-                self.start_rename_prompt();
-            }
-            KeyCode::Char('R') => {
-                self.clear_count();
-                self.attach_remote_tmux_selected()?;
-            }
-            KeyCode::Char('s') => {
-                self.clear_count();
-                self.split_selected(false)?;
-            }
-            KeyCode::Char('S') => {
-                self.clear_count();
-                self.split_selected(true)?;
-            }
-            KeyCode::Char('z') => {
-                self.clear_count();
-                self.zoom_selected()?;
-            }
-            _ => {
-                self.pending_g = false;
-                self.pending_space = false;
-                self.pending_space_f = false;
-                self.clear_count();
-            }
+            NormalAction::NewChild => self.start_child_create()?,
+            NormalAction::NewPeer => self.start_peer_create()?,
+            NormalAction::Refresh => self.refresh()?,
+            NormalAction::Rename => self.start_rename_prompt(),
+            NormalAction::RemoteTmux => self.attach_remote_tmux_selected()?,
+            NormalAction::SplitDown => self.split_selected(false)?,
+            NormalAction::SplitRight => self.split_selected(true)?,
+            NormalAction::Zoom => self.zoom_selected()?,
         }
+        self.clear_count();
         Ok(())
     }
 
@@ -2039,11 +2010,80 @@ fn window_tree_label(window: &crate::tmux::Window) -> String {
     }
 }
 
+fn normal_key_token(key: KeyEvent) -> Option<String> {
+    match key.code {
+        KeyCode::Char(' ') => Some(String::from("space")),
+        KeyCode::Char(ch) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(format!("ctrl-{}", ch.to_ascii_lowercase()))
+        }
+        KeyCode::Char(ch) => Some(ch.to_string()),
+        KeyCode::Enter => Some(String::from("enter")),
+        KeyCode::Up => Some(String::from("up")),
+        KeyCode::Down => Some(String::from("down")),
+        KeyCode::Left => Some(String::from("left")),
+        KeyCode::Right => Some(String::from("right")),
+        KeyCode::Esc => Some(String::from("esc")),
+        KeyCode::Backspace => Some(String::from("backspace")),
+        _ => None,
+    }
+}
+
+fn normal_bindings(keys: &KeyBindings) -> Vec<(NormalAction, &[String])> {
+    key_binding_entries(keys)
+        .into_iter()
+        .filter_map(|(name, binding)| {
+            normal_action(name).map(|action| (action, binding.as_slice()))
+        })
+        .collect()
+}
+
+fn normal_action(name: &str) -> Option<NormalAction> {
+    Some(match name {
+        "quit" => NormalAction::Quit,
+        "picker" => NormalAction::Picker,
+        "next_search" => NormalAction::NextSearch,
+        "previous_search" => NormalAction::PreviousSearch,
+        "down" => NormalAction::Down,
+        "up" => NormalAction::Up,
+        "top" => NormalAction::Top,
+        "bottom" => NormalAction::Bottom,
+        "kill" => NormalAction::Kill,
+        "kill_window" => NormalAction::KillWindow,
+        "archive" => NormalAction::Archive,
+        "archive_window" => NormalAction::ArchiveWindow,
+        "caffeinate" => NormalAction::Caffeinate,
+        "cut" => NormalAction::Cut,
+        "paste_child" => NormalAction::PasteChild,
+        "paste_peer" => NormalAction::PastePeer,
+        "attach" => NormalAction::Attach,
+        "search" => NormalAction::Search,
+        "filter" => NormalAction::Filter,
+        "command" => NormalAction::Command,
+        "new_child" => NormalAction::NewChild,
+        "new_peer" => NormalAction::NewPeer,
+        "refresh" => NormalAction::Refresh,
+        "rename" => NormalAction::Rename,
+        "remote_tmux" => NormalAction::RemoteTmux,
+        "split_down" => NormalAction::SplitDown,
+        "split_right" => NormalAction::SplitRight,
+        "zoom" => NormalAction::Zoom,
+        _ => return None,
+    })
+}
+
+fn starts_with(binding: &[String], prefix: &[String]) -> bool {
+    binding.len() > prefix.len()
+        && binding
+            .iter()
+            .zip(prefix)
+            .all(|(left, right)| left == right)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        App, ArchiveTarget, ConfirmAction, CreateIntent, CutTarget, InputMode, PanePickerEntry,
-        PasteIntent, Selection, SelectionKey, pane_label,
+        pane_label, App, ArchiveTarget, ConfirmAction, CreateIntent, CutTarget, InputMode,
+        PanePickerEntry, PasteIntent, Selection, SelectionKey,
     };
     use crate::{
         managed_config::ManagedConfig,
@@ -2719,6 +2759,16 @@ mod tests {
         app.handle_key(KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE));
 
         assert_eq!(app.input, "jk");
+    }
+
+    #[test]
+    fn custom_picker_binding_enters_picker_mode() {
+        let mut app = test_app();
+        app.key_bindings.picker = vec![String::from("ctrl-p")];
+
+        app.handle_key(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL));
+
+        assert_eq!(app.mode, InputMode::Picker);
     }
 
     #[test]
