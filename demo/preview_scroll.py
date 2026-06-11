@@ -97,7 +97,7 @@ class ScreenRecording:
             [
                 "xterm",
                 "-geometry",
-                "120x34+0+0",
+                "120x30+0+0",
                 "-fa",
                 "DejaVu Sans Mono",
                 "-fs",
@@ -283,7 +283,7 @@ def walk(term: ScreenRecording) -> None:
         if lines and lines[-1] == TARGET_LINE:
             break
         time.sleep(0.25)
-    h(2.0)
+    h(5.0)
 
 
 def verify_video(env: dict[str, str]) -> None:

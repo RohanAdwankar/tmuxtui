@@ -798,8 +798,8 @@ fn archive_name(name: &str) -> String {
     }
 }
 
-fn capture_pane_args(pane_id: &str) -> [&str; 5] {
-    ["capture-pane", "-J", "-p", "-t", pane_id]
+fn capture_pane_args(pane_id: &str) -> [&str; 7] {
+    ["capture-pane", "-J", "-p", "-t", pane_id, "-S", "-"]
 }
 
 fn parse_sessions(raw: &str) -> Vec<Session> {
@@ -861,10 +861,10 @@ mod tests {
     };
 
     #[test]
-    fn preview_capture_uses_visible_screen_only() {
+    fn preview_capture_uses_scrollback_tail() {
         assert_eq!(
             capture_pane_args("%1"),
-            ["capture-pane", "-J", "-p", "-t", "%1"]
+            ["capture-pane", "-J", "-p", "-t", "%1", "-S", "-"]
         );
     }
 
