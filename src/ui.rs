@@ -392,7 +392,12 @@ fn session_label(name: &str, caffeinated: bool) -> String {
 
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
-        format!("{} 1", window.name)
+        let zoom = if window.panes.first().is_some_and(|pane| pane.zoomed) {
+            " z"
+        } else {
+            ""
+        };
+        format!("{} 1{}", window.name, zoom)
     } else {
         window.name.clone()
     }
@@ -482,6 +487,36 @@ mod tests {
         };
 
         assert_eq!(window_tree_label(&split_window), "editor 1");
+    }
+
+    #[test]
+    fn window_tree_label_marks_zoomed_first_pane() {
+        let split_window = Window {
+            id: String::from("@1"),
+            name: String::from("editor"),
+            active: true,
+            session_id: String::from("$1"),
+            panes: vec![
+                crate::tmux::Pane {
+                    id: String::from("%1"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: true,
+                    zoomed: true,
+                    window_id: String::from("@1"),
+                },
+                crate::tmux::Pane {
+                    id: String::from("%2"),
+                    current_command: String::from("zsh"),
+                    current_path: String::from("/tmp"),
+                    active: false,
+                    zoomed: false,
+                    window_id: String::from("@1"),
+                },
+            ],
+        };
+
+        assert_eq!(window_tree_label(&split_window), "editor 1 z");
     }
 
     #[test]

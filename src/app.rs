@@ -2004,7 +2004,12 @@ fn window_archive_panes(window: &crate::tmux::Window) -> Vec<(String, String)> {
 
 fn window_tree_label(window: &crate::tmux::Window) -> String {
     if window.panes.len() > 1 {
-        format!("{} 1", window.name)
+        let zoom = if window.panes.first().is_some_and(|pane| pane.zoomed) {
+            " z"
+        } else {
+            ""
+        };
+        format!("{} 1{}", window.name, zoom)
     } else {
         window.name.clone()
     }
